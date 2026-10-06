@@ -18,7 +18,8 @@ mkdir -p build
 docker build -q -t mpc-vst-html-art "$MPC_VST/tools/html_art" >/dev/null
 
 # 2. params.h, skin, pluginlist-entry.xml
-docker run --rm -u "$U" -e HOME=/tmp -v "$PWD":/w -v "$MPC_VST":/mv:ro -w /w mpc-vst-html-art \
+# SHADOW_SKIN_MPC_OS=2 (set by the release workflow) writes the skin in the MPC OS 2.x shape
+docker run --rm -u "$U" -e HOME=/tmp ${SHADOW_SKIN_MPC_OS:+-e SHADOW_SKIN_MPC_OS="$SHADOW_SKIN_MPC_OS"} -v "$PWD":/w -v "$MPC_VST":/mv:ro -w /w mpc-vst-html-art \
   python3 /mv/tools/gen_vst.py vst.json
 
 cp "$MPC_VST/wrapper/popup.h" build/   # popup open-flag handling shared with mpc-vst's own wrapper
