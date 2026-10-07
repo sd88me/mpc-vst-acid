@@ -24,7 +24,7 @@ no sound itself. It is a native VST2 plugin with a touchscreen skin and Q-Link c
 The screen has three pages, and the Q-Links follow the page you are on.
 
 ### SEQ A and SEQ B
-Each line is an independent sequencer of 2 to 32 steps. Both free-run from the MPC transport. The controls are the same
+Each line is an independent sequencer of 2 to 32 steps. Both follow the MPC transport: every 16th is placed from the song position, so starting mid-song, looping or locating keeps Acid on the grid. The controls are the same
 on both pages.
 
 | Control | What it does |

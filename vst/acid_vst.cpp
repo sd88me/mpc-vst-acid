@@ -19,6 +19,7 @@
  * (acid_core.h) stay process-wide globals same as host_shim.cpp's -- every
  * instance's process_midi/tick calls still go through its own acid_inst_t.
  * ========================================================================== */
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdio>
@@ -108,6 +109,7 @@ struct Plugin {
     float open[NPARAMS] = {0};     /* popup "open" flags (popup.h): wrapper-only, not saved */
     double last_ppq = 0.0;
     bool was_playing = false;
+    long steps = 0;   /* 16th-note boundaries sent to the core (periodic log + host_test) */
     snd_seq_t *seq = nullptr;
     int seq_port = -1;
     char chunk[2048] = {0};
@@ -251,8 +253,6 @@ static void feed_transport(Plugin *w, int32_t frames) {
     VstTimeInfo *ti = (VstTimeInfo *)w->master(&w->fx, audioMasterGetTime, 0,
                                                 kVstTempoValid | kVstPpqPosValid, 0, 0);
     bool playing = ti && (ti->flags & kVstTransportPlaying);
-    if (ti && (ti->flags & kVstTempoValid) && ti->tempo > 0) g_bpm.store((float)ti->tempo);
-
     uint8_t out[MIDI_FX_MAX_OUT_MSGS][3];
     int olen[MIDI_FX_MAX_OUT_MSGS];
     uint8_t msg[1];
@@ -260,10 +260,12 @@ static void feed_transport(Plugin *w, int32_t frames) {
     if (playing && !w->was_playing) {
         g_clock_status.store(MOVE_CLOCK_STATUS_RUNNING);
         w->last_ppq = ti->ppqPos;
-        msg[0] = 0xFA;
         int n;
+        msg[0] = 0xFA;
         { std::lock_guard<std::mutex> lk(w->lock); n = g_api->process_midi(w->inst, msg, 1, out, olen, MIDI_FX_MAX_OUT_MSGS); }
         alsa_send(w, out, olen, n);
+        uint8_t arm[2] = {0xF9, 1};   /* from here the core steps on 0xF9 boundaries; 0xF8 is only a sync heartbeat */
+        { std::lock_guard<std::mutex> lk(w->lock); n = g_api->process_midi(w->inst, arm, 2, out, olen, MIDI_FX_MAX_OUT_MSGS); }
     } else if (!playing && w->was_playing) {
         g_clock_status.store(MOVE_CLOCK_STATUS_STOPPED);
         msg[0] = 0xFC;
@@ -275,8 +277,26 @@ static void feed_transport(Plugin *w, int32_t frames) {
 
     if (playing && ti) {
         const double step = 1.0 / 24.0;   /* 24 PPQN, in quarter notes */
+        double blk = frames * (ti->tempo > 0 ? ti->tempo : g_bpm.load()) / (60.0 * (ti->sampleRate > 0 ? ti->sampleRate : 44100.0));
         double start = w->last_ppq, end = ti->ppqPos;
-        if (end < start || end - start > 1.0) start = end;   /* loop/rewind/jump: resync, don't flood pulses */
+        if (end < start) start = end - blk;                 /* loop wrap: re-cover the block that straddles the loop start so its first 16th isn't lost */
+        else if (end - start > 1.0) start = end;            /* forward jump/locate: resync, don't flood */
+        /* 16th-note steps, placed on the song-position grid (swing delays the odd ones). Done before the
+         * heartbeat pulses so the core is already grid-driven when they arrive. */
+        char sbuf[16] = {0};
+        { std::lock_guard<std::mutex> lk(w->lock); g_api->get_param(w->inst, "swing", sbuf, sizeof sbuf); }
+        int pct = std::atoi(sbuf);
+        double d = pct > 50 ? std::min(0.5, (pct - 50) / 50.0) : 0.0;
+        long n0 = (long)std::floor(start * 4.0) - 1, n1 = (long)std::ceil(end * 4.0) + 1;
+        for (long k = n0 < 0 ? 0 : n0; k <= n1; k++) {
+            double t = k * 0.25 + ((k & 1) ? d * 0.25 : 0.0);
+            if (t < start - 1e-9 || t >= end - 1e-9) continue;
+            uint8_t st = 0xF9;
+            int n;
+            { std::lock_guard<std::mutex> lk(w->lock); n = g_api->process_midi(w->inst, &st, 1, out, olen, MIDI_FX_MAX_OUT_MSGS); }
+            alsa_send(w, out, olen, n);
+            w->steps++;
+        }
         double next = std::ceil(start / step) * step;
         for (; next < end + 1e-9; next += step) {
             msg[0] = 0xF8;
@@ -291,6 +311,9 @@ static void feed_transport(Plugin *w, int32_t frames) {
     { std::lock_guard<std::mutex> lk(w->lock); n = g_api->tick(w->inst, frames, MOVE_SAMPLE_RATE, out, olen, MIDI_FX_MAX_OUT_MSGS); }
     alsa_send(w, out, olen, n);
 }
+
+/* test hook (host_test.c): 16th-note step boundaries sent to the core; hidden in the release build */
+extern "C" long acid_dbg_steps(AEffect *e) { return ((Plugin *)e->object)->steps; }
 
 /* ---------------------------------------------------------------------------
  * VST callbacks
@@ -312,9 +335,9 @@ static void processReplacing(AEffect *e, float **in, float **out, int32_t n) {
     if (dt > 2.0) { w->slow++; LOG("[acid_vst] SLOW callback %.2f ms (block %d, ppq %.3f)\n", dt, n, w->last_ppq); }
     if (t1 - w->t_last_log > 5000.0) {
         if (w->t_last_log > 0)
-            LOG("[acid_vst] %ld blocks, size %d..%d, avg %.3f ms, max %.2f ms, slow %ld, playing %d, ppq %.3f, bpm %.1f\n",
+            LOG("[acid_vst] %ld blocks, size %d..%d, avg %.3f ms, max %.2f ms, slow %ld, playing %d, ppq %.3f, bpm %.1f, steps %ld\n",
                 w->blocks, w->block_min, w->block_max, w->t_sum / w->blocks, w->t_max, w->slow,
-                (int)w->was_playing, w->last_ppq, g_bpm.load());
+                (int)w->was_playing, w->last_ppq, g_bpm.load(), w->steps);
         w->t_last_log = t1; w->t_max = w->t_sum = 0; w->blocks = w->slow = 0;
         w->block_min = 1 << 30; w->block_max = 0;
     }
