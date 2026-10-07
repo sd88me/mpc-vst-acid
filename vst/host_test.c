@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <math.h>
+#include <stdlib.h>
 #include "params.h"
 
 typedef struct AEffect AEffect;
@@ -33,6 +34,7 @@ typedef struct { double samplePos, sampleRate, nanoSeconds, ppqPos, tempo, barSt
 enum { kPlaying = 1 << 1, kPpq = 1 << 9, kTempo = 1 << 10 };
 
 extern AEffect *VSTPluginMain(cb);
+extern long acid_dbg_steps(AEffect *);
 
 static TI g_ti;
 static int automated[NPARAMS];
@@ -94,6 +96,38 @@ int main(void) {
         int closed = a->getP(a, i) < 0.5f && automated[i] == 1;
         printf("popup %s: opens %d, nudge keeps it open %d, pick closes it %d\n", PARAMS[i].key, opened, kept, closed);
         fails += !(opened && kept && closed);
+    }
+
+
+    /* step grid: 16ths come from the song position (not pulse counting) -- loop wraps, mid-song starts
+     * and long runs must neither lose nor add a step */
+    {
+        AEffect *g = VSTPluginMain(host);
+        double ppb = (g_ti.tempo / 60.0) * (128.0 / sr);
+        g_ti.flags = 0; g->pr(g, 0, out, 128);                    /* stopped */
+        g_ti.flags = kPlaying | kPpq | kTempo;
+        /* (1) loop of 4 beats (16 steps) with a block-misaligned wrap, 50 loops */
+        double abs_ppq = 0; long at5 = 0, at50 = 0;
+        for (long k = 0; k < 4000000 && abs_ppq < 4.0 * 50; k++) {
+            g_ti.ppqPos = fmod(abs_ppq, 4.0);
+            g->pr(g, 0, out, 128);
+            abs_ppq += ppb;
+            if (!at5 && abs_ppq >= 4.0 * 5 + 0.2) at5 = acid_dbg_steps(g);
+        }
+        at50 = acid_dbg_steps(g);
+        printf("grid: steps over loops 6..50 = %ld (expect %d, within 1)\n", at50 - at5, 16 * 45);
+        if (labs((at50 - at5) - 16 * 45) > 1) { printf("FAIL loop step count drifted\n"); fails++; }
+        /* (2) start mid-song at 3.3: steps land on the absolute 16th grid */
+        g_ti.flags = 0; g->pr(g, 0, out, 128);
+        long s0 = acid_dbg_steps(g);
+        g_ti.flags = kPlaying | kPpq | kTempo;
+        double p = 3.3;
+        for (; p < 7.3; p += ppb) { g_ti.ppqPos = p; g->pr(g, 0, out, 128); }
+        long got = acid_dbg_steps(g) - s0, exp = 0;
+        for (long k = 0; k < 100; k++) if (k * 0.25 >= 3.3 && k * 0.25 < p - ppb) exp++;
+        printf("grid: mid-song start 3.3 -> %ld steps (expect %ld)\n", got, exp);
+        if (labs(got - exp) > 0) { printf("FAIL mid-song step count\n"); fails++; }
+        g->d(g, 1, 0, 0, 0, 0);
     }
 
     /* chunk round-trip */

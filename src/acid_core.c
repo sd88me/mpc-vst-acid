@@ -233,6 +233,7 @@ typedef struct {
     int running;
     int follow_transport;
     int clock_pulses;
+    int grid_driven;       /* 1 once the host sent a 0xF9 step boundary: 0xF8 then only keeps sync alive */
     double samples_per_step;
     double sample_accum;
     int pulse_sync_active;
@@ -1085,7 +1086,7 @@ static int acid_process_midi(void *instance, const uint8_t *in_msg, int in_len,
     if (status == 0xF8) { /* MIDI clock tick, 24 PPQN */
         t->pulse_sync_active = 1;
         t->blocks_since_last_pulse = 0;
-        if (t->running) {
+        if (t->running && !t->grid_driven) {
             t->clock_pulses++;
             if (t->clock_pulses >= swing_pulse_target(t)) {
                 t->clock_pulses = 0;
@@ -1095,6 +1096,16 @@ static int acid_process_midi(void *instance, const uint8_t *in_msg, int in_len,
             }
         }
         return 0;
+    }
+    if (status == 0xF9) { /* step boundary: the host places each 16th on the song-position grid itself
+                           * (no pulse counting, so a lost pulse or a mid-song start can't shift the phase) */
+        t->grid_driven = 1;
+        t->pulse_sync_active = 1;
+        t->blocks_since_last_pulse = 0;
+        if (!t->running || (in_len >= 2 && in_msg[1] == 1)) return 0;   /* [0xF9, 1] = arm only, no step */
+        int fired = advance_all(t, out_msgs, out_lens, max_out);
+        t->swing_pulse_idx++;
+        return fired;
     }
     if (status == 0xFA) { /* Start */
         if (t->follow_transport) {
