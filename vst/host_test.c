@@ -35,6 +35,7 @@ enum { kPlaying = 1 << 1, kPpq = 1 << 9, kTempo = 1 << 10 };
 
 extern AEffect *VSTPluginMain(cb);
 extern long acid_dbg_steps(AEffect *);
+extern float acid_dbg_bpm(void);
 
 static TI g_ti;
 static int automated[NPARAMS];
@@ -104,6 +105,11 @@ int main(void) {
     {
         AEffect *g = VSTPluginMain(host);
         double ppb = (g_ti.tempo / 60.0) * (128.0 / sr);
+        /* the host tempo reaches the core (gate lengths use it): a project at 126 BPM must not stay at the 120 default */
+        g_ti.tempo = 126.0; g_ti.flags = kPlaying | kPpq | kTempo; g->pr(g, 0, out, 128);
+        printf("host tempo 126 -> core bpm %.1f\n", acid_dbg_bpm());
+        if (acid_dbg_bpm() < 125.9f || acid_dbg_bpm() > 126.1f) { printf("FAIL host tempo never reached the core (%.1f)\n", acid_dbg_bpm()); fails++; }
+        g_ti.tempo = 120.0;
         g_ti.flags = 0; g->pr(g, 0, out, 128);                    /* stopped */
         g_ti.flags = kPlaying | kPpq | kTempo;
         /* (1) loop of 4 beats (16 steps) with a block-misaligned wrap, 50 loops */
