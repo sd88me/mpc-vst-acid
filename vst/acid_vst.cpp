@@ -110,6 +110,7 @@ struct Plugin {
     double last_ppq = 0.0;
     bool was_playing = false;
     long steps = 0;   /* 16th-note boundaries sent to the core (periodic log + host_test) */
+    int32_t last_flags = 0; double last_tempo = 0;   /* what the host last reported (periodic log) */
     snd_seq_t *seq = nullptr;
     int seq_port = -1;
     char chunk[2048] = {0};
@@ -253,6 +254,8 @@ static void feed_transport(Plugin *w, int32_t frames) {
     VstTimeInfo *ti = (VstTimeInfo *)w->master(&w->fx, audioMasterGetTime, 0,
                                                 kVstTempoValid | kVstPpqPosValid, 0, 0);
     bool playing = ti && (ti->flags & kVstTransportPlaying);
+    if (ti) { w->last_flags = ti->flags; w->last_tempo = ti->tempo; }
+    if (ti && (ti->flags & kVstTempoValid) && ti->tempo > 0) g_bpm.store((float)ti->tempo);   /* the core's gate lengths and fallback clock use this */
     uint8_t out[MIDI_FX_MAX_OUT_MSGS][3];
     int olen[MIDI_FX_MAX_OUT_MSGS];
     uint8_t msg[1];
@@ -314,6 +317,7 @@ static void feed_transport(Plugin *w, int32_t frames) {
 
 /* test hook (host_test.c): 16th-note step boundaries sent to the core; hidden in the release build */
 extern "C" long acid_dbg_steps(AEffect *e) { return ((Plugin *)e->object)->steps; }
+extern "C" float acid_dbg_bpm(void) { return g_bpm.load(); }
 
 /* ---------------------------------------------------------------------------
  * VST callbacks
@@ -335,9 +339,9 @@ static void processReplacing(AEffect *e, float **in, float **out, int32_t n) {
     if (dt > 2.0) { w->slow++; LOG("[acid_vst] SLOW callback %.2f ms (block %d, ppq %.3f)\n", dt, n, w->last_ppq); }
     if (t1 - w->t_last_log > 5000.0) {
         if (w->t_last_log > 0)
-            LOG("[acid_vst] %ld blocks, size %d..%d, avg %.3f ms, max %.2f ms, slow %ld, playing %d, ppq %.3f, bpm %.1f, steps %ld\n",
+            LOG("[acid_vst] %ld blocks, size %d..%d, avg %.3f ms, max %.2f ms, slow %ld, playing %d, ppq %.3f, bpm %.1f, steps %ld, host flags 0x%x tempo %.3f\n",
                 w->blocks, w->block_min, w->block_max, w->t_sum / w->blocks, w->t_max, w->slow,
-                (int)w->was_playing, w->last_ppq, g_bpm.load(), w->steps);
+                (int)w->was_playing, w->last_ppq, g_bpm.load(), w->steps, (unsigned)w->last_flags, w->last_tempo);
         w->t_last_log = t1; w->t_max = w->t_sum = 0; w->blocks = w->slow = 0;
         w->block_min = 1 << 30; w->block_max = 0;
     }
