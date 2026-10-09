@@ -133,6 +133,19 @@ int main(void) {
         for (long k = 0; k < 100; k++) if (k * 0.25 >= 3.3 && k * 0.25 < p - ppb) exp++;
         printf("grid: mid-song start 3.3 -> %ld steps (expect %ld)\n", got, exp);
         if (labs(got - exp) > 0) { printf("FAIL mid-song step count\n"); fails++; }
+        /* (3) tempo change: the host's ppqPos steps back a little -- no step may fire twice */
+        g_ti.flags = 0; g->pr(g, 0, out, 128);
+        g_ti.flags = kPlaying | kPpq | kTempo;
+        g_ti.ppqPos = 0.0; g->pr(g, 0, out, 128);
+        long j0 = acid_dbg_steps(g);
+        double q = 0.0, qmax = 0.0;
+        for (int k = 0; k < 400; k++) {
+            q += ppb; if (q > qmax) qmax = q; g_ti.ppqPos = q; g->pr(g, 0, out, 128);
+            if (k % 50 == 49) { q -= 0.1; g_ti.ppqPos = q; g->pr(g, 0, out, 128); }   /* jitter back 0.1 beat */
+        }
+        long jgot = acid_dbg_steps(g) - j0, jexp = (long)floor(qmax * 4.0 - 1e-9);
+        printf("grid: tempo-change jitter -> %ld steps (expect %ld)\n", jgot, jexp);
+        if (labs(jgot - jexp) > 1) { printf("FAIL step fired twice after ppqPos stepped back\n"); fails++; }
         g->d(g, 1, 0, 0, 0, 0);
     }
 
