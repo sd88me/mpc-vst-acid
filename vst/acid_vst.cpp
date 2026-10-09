@@ -286,7 +286,6 @@ static void feed_transport(Plugin *w, int32_t frames) {
          * block would fire steps twice, and the core's pattern position (incremental) would run ahead for good.
          * Hold the high-water mark until the position catches up. */
         bool jitter = end < start && start - end < 0.25;
-        if (end < start) { static int nlog = 0; if (nlog++ < 50) LOG("[acid_vst] ppqPos stepped back %.4f (%.4f -> %.4f) tempo %.3f%s\n", start - end, start, end, ti->tempo, jitter ? " (ignored)" : " (wrap/locate)"); }
         if (jitter) end = start;
         if (end < start) start = end - blk;                 /* loop wrap: re-cover the block that straddles the loop start so its first 16th isn't lost */
         else if (end - start > 1.0) start = end;            /* forward jump/locate: resync, don't flood */
