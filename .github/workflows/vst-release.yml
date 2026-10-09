@@ -20,13 +20,13 @@ on:
 
 jobs:
   acid:
-    uses: sd88me/mpc-vst-plugins/.github/workflows/vst-release.yml@a4b8f861d07153a2b387d7520331f532f7247502
+    uses: sd88me/mpc-vst-plugins/.github/workflows/vst-release.yml@7ee6aba241f61061dbc9e3264500f7dc0d56fd13
     permissions:
       contents: write
     with:
       tag: acid-vst-v${{ inputs.version }}
       version: ${{ inputs.version }}
-      tools_ref: a4b8f861d07153a2b387d7520331f532f7247502
+      tools_ref: 7ee6aba241f61061dbc9e3264500f7dc0d56fd13
       vst_dir: vst
       build: SHADOW_SKIN_MPC_OS=2 bash vst/build.sh
       host_test: vst/test.sh
