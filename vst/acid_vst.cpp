@@ -282,6 +282,12 @@ static void feed_transport(Plugin *w, int32_t frames) {
         const double step = 1.0 / 24.0;   /* 24 PPQN, in quarter notes */
         double blk = frames * (ti->tempo > 0 ? ti->tempo : g_bpm.load()) / (60.0 * (ti->sampleRate > 0 ? ti->sampleRate : 44100.0));
         double start = w->last_ppq, end = ti->ppqPos;
+        /* a tempo change makes the host's ppqPos step back slightly: that is not a loop wrap. Re-covering the
+         * block would fire steps twice, and the core's pattern position (incremental) would run ahead for good.
+         * Hold the high-water mark until the position catches up. */
+        bool jitter = end < start && start - end < 0.25;
+        if (end < start) { static int nlog = 0; if (nlog++ < 50) LOG("[acid_vst] ppqPos stepped back %.4f (%.4f -> %.4f) tempo %.3f%s\n", start - end, start, end, ti->tempo, jitter ? " (ignored)" : " (wrap/locate)"); }
+        if (jitter) end = start;
         if (end < start) start = end - blk;                 /* loop wrap: re-cover the block that straddles the loop start so its first 16th isn't lost */
         else if (end - start > 1.0) start = end;            /* forward jump/locate: resync, don't flood */
         /* 16th-note steps, placed on the song-position grid (swing delays the odd ones). Done before the
@@ -307,7 +313,7 @@ static void feed_transport(Plugin *w, int32_t frames) {
             { std::lock_guard<std::mutex> lk(w->lock); n = g_api->process_midi(w->inst, msg, 1, out, olen, MIDI_FX_MAX_OUT_MSGS); }
             alsa_send(w, out, olen, n);
         }
-        w->last_ppq = ti->ppqPos;
+        if (!jitter) w->last_ppq = ti->ppqPos;
     }
 
     int n;
