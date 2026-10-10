@@ -109,6 +109,7 @@ struct Plugin {
     float open[NPARAMS] = {0};     /* popup "open" flags (popup.h): wrapper-only, not saved */
     double last_ppq = 0.0;
     bool was_playing = false;
+    double last_tempo_seen = 0.0;
     long next_k = -1;  /* next absolute 16th index due; -1 = rebase on the next step (start, loop wrap, locate) */
     long steps = 0;   /* 16th-note boundaries sent to the core (periodic log + host_test) */
     int32_t last_flags = 0; double last_tempo = 0;   /* what the host last reported (periodic log) */
@@ -291,6 +292,10 @@ static void feed_transport(Plugin *w, int32_t frames) {
         /* a tempo change makes the host's ppqPos step back slightly: that is not a loop wrap. Re-covering the
          * block would fire steps twice, and the core's pattern position (incremental) would run ahead for good.
          * Hold the high-water mark until the position catches up. */
+        if (end - start > 2.5 * blk || end < start || ti->tempo != w->last_tempo_seen)
+            LOG("[acid_vst] ppq %.4f -> %.4f (d %.4f, expected %.4f) tempo %.3f -> %.3f next_k %ld\n",
+                start, end, end - start, blk, w->last_tempo_seen, ti->tempo, w->next_k);
+        w->last_tempo_seen = ti->tempo;
         bool jitter = end < start && start - end < 1.0;
         if (jitter) end = start;
         if (end < start) { start = end - blk; w->next_k = -1; }                 /* loop wrap: re-cover the block that straddles the loop start so its first 16th isn't lost */
