@@ -214,6 +214,7 @@ typedef struct {
      * TD-3-MO) instead of a MIDI synth. No Move equivalent. See
      * emit_step_for_seq()'s own comment for exactly what changes. */
     int cv_mode;
+    int mute;              /* VST: the host wrapper drops note-ons while set (sequence keeps running in time) */
     int swing_pct;         /* 50-75, MPC-style 16th swing; 50 = straight.
                            * Whole percent, but the chain_param below is
                            * declared "float" (like Length A/B) so the knob
@@ -1407,6 +1408,8 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
          * changes (accent-via-velocity swing, slide CC target). */
         int v = parse_int(val, 0);
         t->cv_mode = v ? 1 : 0;
+    } else if (strcmp(key, "mute") == 0) {
+        t->mute = parse_int(val, 0) ? 1 : 0;
     }
 }
 
@@ -1450,6 +1453,7 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
     else if (strcmp(key, "swing") == 0) n = snprintf(buf, buf_len, "%d", t->swing_pct);
     else if (strcmp(key, "jitter") == 0) n = snprintf(buf, buf_len, "%.3f", t->jitter);
     else if (strcmp(key, "cv_mode") == 0) n = snprintf(buf, buf_len, "%d", t->cv_mode);  /* FORCE-ONLY */
+    else if (strcmp(key, "mute") == 0) n = snprintf(buf, buf_len, "%d", t->mute);
     else if (strcmp(key, "chain_params") == 0) {
         /* Not actually consulted for midi_fx loading -- chain_midi.c reads
          * chain_params straight out of module.json on disk (parse_chain_params),

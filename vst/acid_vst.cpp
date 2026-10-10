@@ -109,6 +109,7 @@ struct Plugin {
     float open[NPARAMS] = {0};     /* popup "open" flags (popup.h): wrapper-only, not saved */
     double last_ppq = 0.0;
     bool was_playing = false;
+    long next_k = -1;  /* next absolute 16th index due; -1 = rebase on the next step (start, loop wrap, locate) */
     long steps = 0;   /* 16th-note boundaries sent to the core (periodic log + host_test) */
     int32_t last_flags = 0; double last_tempo = 0;   /* what the host last reported (periodic log) */
     snd_seq_t *seq = nullptr;
@@ -202,6 +203,9 @@ static void alsa_open(Plugin *w) {
     LOG("[acid_vst] ALSA client '%s' port %d\n", name, w->seq_port);
 }
 static void alsa_send(Plugin *w, const uint8_t (*msgs)[3], const int *lens, int n) {
+    char mb[8] = {0};
+    { std::lock_guard<std::mutex> lk(w->lock); g_api->get_param(w->inst, "mute", mb, sizeof mb); }
+    bool muted = std::atoi(mb) != 0;   /* muted: swallow note-ons, keep note-offs so nothing hangs */
     for (int i = 0; i < n; i++) {
         if (lens[i] < 2) continue;
         w->sent_ring[w->sent_pos][0] = msgs[i][0];
@@ -215,6 +219,7 @@ static void alsa_send(Plugin *w, const uint8_t (*msgs)[3], const int *lens, int 
         const uint8_t *m = msgs[i];
         int len = lens[i];
         if (len < 2) continue;
+        if (muted && (m[0] & 0xF0) == 0x90 && len >= 3 && m[2] > 0) continue;
         snd_seq_event_t ev;
         snd_seq_ev_clear(&ev);
         snd_seq_ev_set_source(&ev, w->seq_port);
@@ -263,6 +268,7 @@ static void feed_transport(Plugin *w, int32_t frames) {
     if (playing && !w->was_playing) {
         g_clock_status.store(MOVE_CLOCK_STATUS_RUNNING);
         w->last_ppq = ti->ppqPos;
+        w->next_k = -1;
         int n;
         msg[0] = 0xFA;
         { std::lock_guard<std::mutex> lk(w->lock); n = g_api->process_midi(w->inst, msg, 1, out, olen, MIDI_FX_MAX_OUT_MSGS); }
@@ -285,10 +291,10 @@ static void feed_transport(Plugin *w, int32_t frames) {
         /* a tempo change makes the host's ppqPos step back slightly: that is not a loop wrap. Re-covering the
          * block would fire steps twice, and the core's pattern position (incremental) would run ahead for good.
          * Hold the high-water mark until the position catches up. */
-        bool jitter = end < start && start - end < 0.25;
+        bool jitter = end < start && start - end < 1.0;
         if (jitter) end = start;
-        if (end < start) start = end - blk;                 /* loop wrap: re-cover the block that straddles the loop start so its first 16th isn't lost */
-        else if (end - start > 1.0) start = end;            /* forward jump/locate: resync, don't flood */
+        if (end < start) { start = end - blk; w->next_k = -1; }                 /* loop wrap: re-cover the block that straddles the loop start so its first 16th isn't lost */
+        else if (end - start > 1.0) { start = end; w->next_k = -1; }            /* forward jump/locate: resync, don't flood */
         /* 16th-note steps, placed on the song-position grid (swing delays the odd ones). Done before the
          * heartbeat pulses so the core is already grid-driven when they arrive. */
         char sbuf[16] = {0};
@@ -299,11 +305,27 @@ static void feed_transport(Plugin *w, int32_t frames) {
         for (long k = n0 < 0 ? 0 : n0; k <= n1; k++) {
             double t = k * 0.25 + ((k & 1) ? d * 0.25 : 0.0);
             if (t < start - 1e-9 || t >= end - 1e-9) continue;
-            uint8_t st = 0xF9;
-            int n;
-            { std::lock_guard<std::mutex> lk(w->lock); n = g_api->process_midi(w->inst, &st, 1, out, olen, MIDI_FX_MAX_OUT_MSGS); }
-            alsa_send(w, out, olen, n);
-            w->steps++;
+            /* The core counts steps incrementally, so a duplicated or lost step would shift the pattern for good
+             * (a tempo change can do both). Keep it locked to the song grid: skip a step already fired, and
+             * silently replay missed ones (note-offs only) so the pattern position is always k - first k. */
+            if (w->next_k >= 0 && k < w->next_k) continue;
+            long gap = w->next_k >= 0 ? std::min(k - w->next_k, 64L) : 0;
+            for (long g = 0; g <= gap; g++) {
+                uint8_t st = 0xF9;
+                int n;
+                { std::lock_guard<std::mutex> lk(w->lock); n = g_api->process_midi(w->inst, &st, 1, out, olen, MIDI_FX_MAX_OUT_MSGS); }
+                if (g < gap) {   /* catch-up step: no new notes, but let note-offs through */
+                    int m = 0;
+                    for (int i = 0; i < n; i++)
+                        if ((out[i][0] & 0xF0) == 0x80 || ((out[i][0] & 0xF0) == 0x90 && out[i][2] == 0)) {
+                            std::memcpy(out[m], out[i], 3); olen[m++] = olen[i];
+                        }
+                    n = m;
+                }
+                alsa_send(w, out, olen, n);
+                w->steps++;
+            }
+            w->next_k = k + 1;
         }
         double next = std::ceil(start / step) * step;
         for (; next < end + 1e-9; next += step) {
