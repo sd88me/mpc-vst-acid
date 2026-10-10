@@ -290,9 +290,8 @@ static void feed_transport(Plugin *w, int32_t frames) {
         const double step = 1.0 / 24.0;   /* 24 PPQN, in quarter notes */
         double blk = frames * (ti->tempo > 0 ? ti->tempo : g_bpm.load()) / (60.0 * (ti->sampleRate > 0 ? ti->sampleRate : 44100.0));
         double start = w->last_ppq, end = ti->ppqPos;
-        /* a tempo change makes the host's ppqPos step back slightly: that is not a loop wrap. Re-covering the
-         * block would fire steps twice, and the core's pattern position (incremental) would run ahead for good.
-         * Hold the high-water mark until the position catches up. */
+        /* a tempo change makes the host's ppqPos step back slightly: that is not a loop wrap, and re-covering
+         * the block would play its notes twice. Hold the high-water mark until the position catches up. */
         if (end - start > 2.5 * blk || end < start || ti->tempo != w->last_tempo_seen)
             LOG("[acid_vst] ppq %.4f -> %.4f (d %.4f, expected %.4f) tempo %.3f -> %.3f next_k %ld\n",
                 start, end, end - start, blk, w->last_tempo_seen, ti->tempo, w->next_k);
@@ -300,7 +299,7 @@ static void feed_transport(Plugin *w, int32_t frames) {
         bool jitter = end < start && start - end < 1.0;
         if (jitter) end = start;
         if (end < start) { start = end - blk; w->next_k = -1; }                 /* loop wrap: re-cover the block that straddles the loop start so its first 16th isn't lost */
-        else if (end - start > 1.0) { start = end; w->next_k = -1; }            /* forward jump/locate: resync, don't flood */
+        else if (end - start > 1.0) { start = end - blk; w->next_k = -1; }      /* forward jump/locate: play from the landing block, don't flood */
         /* 16th-note steps, placed on the song-position grid (swing delays the odd ones). Done before the
          * heartbeat pulses so the core is already grid-driven when they arrive. */
         char sbuf[16] = {0};
@@ -311,26 +310,19 @@ static void feed_transport(Plugin *w, int32_t frames) {
         for (long k = n0 < 0 ? 0 : n0; k <= n1; k++) {
             double t = k * 0.25 + ((k & 1) ? d * 0.25 : 0.0);
             if (t < start - 1e-9 || t >= end - 1e-9) continue;
-            /* The core counts steps incrementally, so a duplicated or lost step would shift the pattern for good
-             * (a tempo change can do both). Keep it locked to the song grid: skip a step already fired, and
-             * silently replay missed ones (note-offs only) so the pattern position is always k - first k. */
+            /* Each step names its absolute 16th in the song: the core plays the pattern step that song position
+             * calls for, so a doubled or lost host step (fast tempo changes do both) can't shift it. A 16th already
+             * fired is skipped so no note doubles. */
             if (w->next_k >= 0 && k < w->next_k) continue;
-            long gap = w->next_k >= 0 ? std::min(k - w->next_k, 64L) : 0;
-            for (long g = 0; g <= gap; g++) {
-                uint8_t st = 0xF9;
-                int n;
-                { std::lock_guard<std::mutex> lk(w->lock); n = g_api->process_midi(w->inst, &st, 1, out, olen, MIDI_FX_MAX_OUT_MSGS); }
-                if (g < gap) {   /* catch-up step: no new notes, but let note-offs through */
-                    int m = 0;
-                    for (int i = 0; i < n; i++)
-                        if ((out[i][0] & 0xF0) == 0x80 || ((out[i][0] & 0xF0) == 0x90 && out[i][2] == 0)) {
-                            std::memcpy(out[m], out[i], 3); olen[m++] = olen[i];
-                        }
-                    n = m;
-                }
-                alsa_send(w, out, olen, n);
-                w->steps++;
-            }
+            char kb[24];
+            std::snprintf(kb, sizeof kb, "%ld", k);
+            uint8_t st = 0xF9;
+            int n;
+            { std::lock_guard<std::mutex> lk(w->lock);
+              g_api->set_param(w->inst, "song_step", kb);
+              n = g_api->process_midi(w->inst, &st, 1, out, olen, MIDI_FX_MAX_OUT_MSGS); }
+            alsa_send(w, out, olen, n);
+            w->steps++;
             w->next_k = k + 1;
         }
         double next = std::ceil(start / step) * step;
@@ -351,6 +343,13 @@ static void feed_transport(Plugin *w, int32_t frames) {
 /* test hook (host_test.c): 16th-note step boundaries sent to the core; hidden in the release build */
 extern "C" long acid_dbg_steps(AEffect *e) { return ((Plugin *)e->object)->steps; }
 extern "C" float acid_dbg_bpm(void) { return g_bpm.load(); }
+extern "C" int acid_dbg_pos(AEffect *e) {
+    char b[16] = {0};
+    Plugin *w = (Plugin *)e->object;
+    std::lock_guard<std::mutex> lk(w->lock);
+    g_api->get_param(w->inst, "a_pos", b, sizeof b);
+    return std::atoi(b);
+}
 
 /* ---------------------------------------------------------------------------
  * VST callbacks

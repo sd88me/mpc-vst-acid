@@ -36,6 +36,7 @@ enum { kPlaying = 1 << 1, kPpq = 1 << 9, kTempo = 1 << 10 };
 extern AEffect *VSTPluginMain(cb);
 extern long acid_dbg_steps(AEffect *);
 extern float acid_dbg_bpm(void);
+extern int acid_dbg_pos(AEffect *);
 
 static TI g_ti;
 static int automated[NPARAMS];
@@ -146,6 +147,21 @@ int main(void) {
         long jgot = acid_dbg_steps(g) - j0, jexp = (long)floor(qmax * 4.0 - 1e-9);
         printf("grid: tempo-change jitter -> %ld steps (expect %ld)\n", jgot, jexp);
         if (labs(jgot - jexp) > 1) { printf("FAIL step fired twice after ppqPos stepped back\n"); fails++; }
+        /* (4) fast tempo changes: the host's position steps back and jumps ahead (steps doubled and lost). The
+         * pattern step must still be the one the song position names: (16th index) mod length. */
+        g_ti.flags = 0; g->pr(g, 0, out, 128);
+        g_ti.flags = kPlaying | kPpq | kTempo;
+        q = 0.0; g_ti.ppqPos = q; g->pr(g, 0, out, 128);
+        for (int k = 0; k < 600; k++) {
+            q += ppb;
+            if (k % 37 == 36) q += 0.4;          /* lurch ahead: skips a 16th or two */
+            if (k % 53 == 52) q -= 0.15;         /* step back */
+            g_ti.ppqPos = q; g->pr(g, 0, out, 128);
+        }
+        for (int k = 0; k < 20; k++) { q += ppb; g_ti.ppqPos = q; g->pr(g, 0, out, 128); }
+        long lastk = (long)ceil(q * 4.0 - 1e-9) - 1;
+        printf("grid: tempo lurches -> pattern step %d (song says %ld)\n", acid_dbg_pos(g), lastk % 16);
+        if (acid_dbg_pos(g) != lastk % 16) { printf("FAIL pattern drifted off the song position\n"); fails++; }
         g->d(g, 1, 0, 0, 0, 0);
     }
 
