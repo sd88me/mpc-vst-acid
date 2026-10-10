@@ -227,6 +227,7 @@ static void alsa_send(Plugin *w, const uint8_t (*msgs)[3], const int *lens, int 
         snd_seq_ev_set_subs(&ev);
         snd_seq_ev_set_direct(&ev);
         uint8_t type = m[0] & 0xF0, ch = m[0] & 0x0F;
+        { static int logged = 0; if (logged < 400) { logged++; LOG("[acid_vst] out %02x %02x %02x muted %d\n", m[0], m[1], len > 2 ? m[2] : 0, (int)muted); } }
         if (type == 0x90 && len >= 3 && m[2] > 0) snd_seq_ev_set_noteon(&ev, ch, m[1], m[2]);
         else if (type == 0x80 || (type == 0x90 && len >= 3)) snd_seq_ev_set_noteoff(&ev, ch, m[1], 0);
         else if (type == 0xB0 && len >= 3) snd_seq_ev_set_controller(&ev, ch, m[1], m[2]);
@@ -512,6 +513,14 @@ static intptr_t dispatcher(AEffect *e, int32_t op, int32_t idx, intptr_t v, void
             buf[n < (int)sizeof buf ? n : (int)sizeof buf - 1] = 0;
             s += PARAMS[i].key; s += '='; s += buf; s += ';';
         }
+        for (const char *k : {"a_seed", "b_seed"}) {   /* the pattern each Generate made, so a reload plays the same notes */
+            char buf[32];
+            int n;
+            { std::lock_guard<std::mutex> lk(w->lock); n = g_api->get_param(w->inst, k, buf, sizeof buf); }
+            if (n <= 0) continue;
+            buf[n < (int)sizeof buf ? n : (int)sizeof buf - 1] = 0;
+            s += k; s += '='; s += buf; s += ';';
+        }
         copy_str(w->chunk, s, sizeof w->chunk);
         *(void **)p = w->chunk;
         return (intptr_t)std::strlen(w->chunk) + 1;
@@ -521,6 +530,8 @@ static intptr_t dispatcher(AEffect *e, int32_t op, int32_t idx, intptr_t v, void
         std::memcpy(w->chunk, p, (size_t)v);
         w->chunk[v - 1] = 0;
         std::lock_guard<std::mutex> lk(w->lock);
+        if (!std::strstr(w->chunk, "a_seed="))   /* a project saved before seeds were stored: keep the old fixed default pattern */
+            { g_api->set_param(w->inst, "a_seed", "48879"); g_api->set_param(w->inst, "b_seed", "48880"); }
         char *s = w->chunk, *save = nullptr;
         for (char *tok = strtok_r(s, ";", &save); tok; tok = strtok_r(nullptr, ";", &save)) {
             char *eq = std::strchr(tok, '=');

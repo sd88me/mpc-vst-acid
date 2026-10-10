@@ -50,6 +50,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <stdint.h>
 #include <stdio.h>
 #include "acid_core.h"
 
@@ -1028,7 +1030,12 @@ static void *acid_create_instance(const char *module_dir, const char *config_jso
 
     for (int i = 0; i < NUM_SEQS; i++) {
         acid_seq_t *s = &t->seq[i];
-        s->rng = 0xBEEFu + (uint32_t)i;
+        /* a new instance starts from a fresh random pattern; a saved project restores its own via the chunk's seed */
+        {
+            struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts);
+            uint32_t r = (uint32_t)ts.tv_nsec * 2654435761u ^ (uint32_t)ts.tv_sec ^ (uint32_t)(uintptr_t)t ^ (0x9E3779B9u * (uint32_t)(i + 1));
+            s->rng = r ? r : 0xBEEFu + (uint32_t)i;
+        }
         s->seed = s->rng;
         s->length = 16;
         s->density = 0.7f;
@@ -1282,6 +1289,9 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
             uint32_t seed = rng_next_u32(&s->rng);
             regenerate_pattern(s, t->scale, seed);
             if (s->position >= s->length) s->position = s->length - 1;
+        } else if (strcmp(k, "seed") == 0) {   /* project reload: rebuild the pattern a saved Generate made */
+            uint32_t seed = (uint32_t)strtoul(val, NULL, 10);
+            if (seed) { regenerate_pattern(s, t->scale, seed); if (s->position >= s->length) s->position = s->length - 1; }
         } else if (strcmp(k, "mutate") == 0) {
             mutate_pattern(s, t->scale);
         } else if (strcmp(k, "dump") == 0) {
@@ -1436,6 +1446,7 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
         else if (strcmp(k, "tune") == 0) n = snprintf(buf, buf_len, "%d", s->tune);
         else if (strcmp(k, "offset") == 0) n = snprintf(buf, buf_len, "%d", s->offset);
         else if (strcmp(k, "dir") == 0) n = snprintf(buf, buf_len, "%d", s->dir);
+        else if (strcmp(k, "seed") == 0) n = snprintf(buf, buf_len, "%u", (unsigned)s->seed);
         else if (strcmp(k, "channel") == 0) n = snprintf(buf, buf_len, "%d", s->out_ch + 1);  /* FORCE-ONLY */
         else if (strcmp(k, "auto_gen") == 0) n = snprintf(buf, buf_len, "%d", s->auto_gen_idx);  /* FORCE-ONLY */
         else if (strcmp(k, "generate") == 0 || strcmp(k, "mutate") == 0 || strcmp(k, "dump") == 0) n = snprintf(buf, buf_len, "off");
