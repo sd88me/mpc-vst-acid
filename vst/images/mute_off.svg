@@ -4,4 +4,5 @@
   </defs>
   <rect x="2" y="2" width="146" height="48" rx="6" fill="url(#g)" stroke="#1a0e04" stroke-width="2"/>
   <rect x="6" y="5" width="138" height="16" rx="4" fill="#ffffff" opacity="0.06"/>
+  <text x="75" y="27" text-anchor="middle" dominant-baseline="central" font-family="'Univers 53 Extended', 'Titillium Web', sans-serif" font-weight="700" font-size="17" letter-spacing="1.4" fill="#d8b48a" opacity="0.55">MUTE</text>
 </svg>
