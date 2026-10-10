@@ -50,6 +50,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <stdint.h>
 #include <stdio.h>
 #include "acid_core.h"
 
@@ -214,6 +216,7 @@ typedef struct {
      * TD-3-MO) instead of a MIDI synth. No Move equivalent. See
      * emit_step_for_seq()'s own comment for exactly what changes. */
     int cv_mode;
+    long song_step;        /* VST: absolute 16th index of the step about to fire (set before each 0xF9), -1 = count steps */
     int mute;              /* VST: the host wrapper drops note-ons while set (sequence keeps running in time) */
     int swing_pct;         /* 50-75, MPC-style 16th swing; 50 = straight.
                            * Whole percent, but the chain_param below is
@@ -900,11 +903,32 @@ static int chain_begin_tick(acid_inst_t *t) {
  * independent wrap is what makes differently-lengthed A/B patterns a real
  * polymeter when Reset Both is Off, rather than something that needs
  * explicit polymeter support. */
+/* Song-locked position: the step a sequencer plays at song 16th `n` (already folded by Reset All), as a
+ * pure function -- so a lost or doubled host step can never shift the pattern. Same orders as next_position(). */
+static int song_position(const acid_seq_t *s, long n) {
+    int L = s->length;
+    if (L <= 1) return 0;
+    switch (s->dir) {
+        case 1: return L - 1 - (int)(n % L);                       /* Rev */
+        case 2: { int p = (int)(n % (2 * L - 2)); return p < L ? p : 2 * L - 2 - p; }   /* Pendulum */
+        default: return (int)(n % L);                              /* Fwd */
+    }
+}
+
 static int advance_all(acid_inst_t *t, uint8_t out_msgs[][3], int out_lens[], int max_out) {
     int count = 0;
 
+    long k = t->song_step;
+    t->song_step = -1;
+    int locked = k >= 0 && t->blend_mode != BM_CHAIN;   /* Chain takes turns between A and B: stays step-counted */
+    if (locked) t->swing_pulse_idx = k;                 /* Blend's per-step pattern follows the song too */
+    long n = k;
+    if (locked && t->reset_bars_idx != 4) n = k % BAR_STEPS[t->reset_bars_idx];
+
     int forced_reset = 0;
-    if (t->reset_bars_idx != 4) {
+    if (locked) {
+        t->bar_step_count = 0;
+    } else if (t->reset_bars_idx != 4) {
         t->bar_step_count++;
         if (t->bar_step_count >= BAR_STEPS[t->reset_bars_idx]) {
             t->bar_step_count = 0;
@@ -926,7 +950,8 @@ static int advance_all(acid_inst_t *t, uint8_t out_msgs[][3], int out_lens[], in
         acid_seq_t *s = &t->seq[i];
         if (s->auto_gen_idx != 0) {
             s->auto_gen_step_count++;
-            if (s->auto_gen_step_count >= AUTO_GEN_BAR_STEPS[s->auto_gen_idx - 1]) {
+            if (locked ? (k > 0 && k % AUTO_GEN_BAR_STEPS[s->auto_gen_idx - 1] == 0)
+                       : s->auto_gen_step_count >= AUTO_GEN_BAR_STEPS[s->auto_gen_idx - 1]) {
                 s->auto_gen_step_count = 0;
                 regenerate_pattern(s, t->scale, rng_next_u32(&s->rng));
                 if (s->position >= s->length) s->position = s->length - 1;
@@ -956,7 +981,7 @@ static int advance_all(acid_inst_t *t, uint8_t out_msgs[][3], int out_lens[], in
             s->position = 0;
             s->pendulum_fwd = 1;  /* Reset Both is authoritative -- pendulum resumes forward */
         } else {
-            int np = next_position(s);
+            int np = locked ? song_position(s, n) : next_position(s);
             /* Jitter (Advanced) -- perturb WHICH step plays, never WHEN, so it
              * stays independent of swing_gap_mult()/swing_delay_frac(). Rolls
              * off the same per-seq PRNG stream Mutate draws from, so it stays
@@ -1028,7 +1053,12 @@ static void *acid_create_instance(const char *module_dir, const char *config_jso
 
     for (int i = 0; i < NUM_SEQS; i++) {
         acid_seq_t *s = &t->seq[i];
-        s->rng = 0xBEEFu + (uint32_t)i;
+        /* a new instance starts from a fresh random pattern; a saved project restores its own via the chunk's seed */
+        {
+            struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts);
+            uint32_t r = (uint32_t)ts.tv_nsec * 2654435761u ^ (uint32_t)ts.tv_sec ^ (uint32_t)(uintptr_t)t ^ (0x9E3779B9u * (uint32_t)(i + 1));
+            s->rng = r ? r : 0xBEEFu + (uint32_t)i;
+        }
         s->seed = s->rng;
         s->length = 16;
         s->density = 0.7f;
@@ -1052,6 +1082,7 @@ static void *acid_create_instance(const char *module_dir, const char *config_jso
     t->bpm = 120.0f;
     t->running = 0;
     t->follow_transport = 1;
+    t->song_step = -1;
 
     if (g_host && g_host->get_clock_status) {
         if (g_host->get_clock_status() == MOVE_CLOCK_STATUS_RUNNING) t->running = 1;
@@ -1282,6 +1313,9 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
             uint32_t seed = rng_next_u32(&s->rng);
             regenerate_pattern(s, t->scale, seed);
             if (s->position >= s->length) s->position = s->length - 1;
+        } else if (strcmp(k, "seed") == 0) {   /* project reload: rebuild the pattern a saved Generate made */
+            uint32_t seed = (uint32_t)strtoul(val, NULL, 10);
+            if (seed) { regenerate_pattern(s, t->scale, seed); if (s->position >= s->length) s->position = s->length - 1; }
         } else if (strcmp(k, "mutate") == 0) {
             mutate_pattern(s, t->scale);
         } else if (strcmp(k, "dump") == 0) {
@@ -1408,6 +1442,8 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
          * changes (accent-via-velocity swing, slide CC target). */
         int v = parse_int(val, 0);
         t->cv_mode = v ? 1 : 0;
+    } else if (strcmp(key, "song_step") == 0) {
+        t->song_step = strtol(val, NULL, 10);
     } else if (strcmp(key, "mute") == 0) {
         t->mute = parse_int(val, 0) ? 1 : 0;
     }
@@ -1436,6 +1472,8 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
         else if (strcmp(k, "tune") == 0) n = snprintf(buf, buf_len, "%d", s->tune);
         else if (strcmp(k, "offset") == 0) n = snprintf(buf, buf_len, "%d", s->offset);
         else if (strcmp(k, "dir") == 0) n = snprintf(buf, buf_len, "%d", s->dir);
+        else if (strcmp(k, "pos") == 0) n = snprintf(buf, buf_len, "%d", s->position);   /* test hook */
+        else if (strcmp(k, "seed") == 0) n = snprintf(buf, buf_len, "%u", (unsigned)s->seed);
         else if (strcmp(k, "channel") == 0) n = snprintf(buf, buf_len, "%d", s->out_ch + 1);  /* FORCE-ONLY */
         else if (strcmp(k, "auto_gen") == 0) n = snprintf(buf, buf_len, "%d", s->auto_gen_idx);  /* FORCE-ONLY */
         else if (strcmp(k, "generate") == 0 || strcmp(k, "mutate") == 0 || strcmp(k, "dump") == 0) n = snprintf(buf, buf_len, "off");
