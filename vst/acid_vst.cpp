@@ -227,7 +227,6 @@ static void alsa_send(Plugin *w, const uint8_t (*msgs)[3], const int *lens, int 
         snd_seq_ev_set_subs(&ev);
         snd_seq_ev_set_direct(&ev);
         uint8_t type = m[0] & 0xF0, ch = m[0] & 0x0F;
-        { static int logged = 0; if (logged < 400) { logged++; LOG("[acid_vst] out %02x %02x %02x muted %d\n", m[0], m[1], len > 2 ? m[2] : 0, (int)muted); } }
         if (type == 0x90 && len >= 3 && m[2] > 0) snd_seq_ev_set_noteon(&ev, ch, m[1], m[2]);
         else if (type == 0x80 || (type == 0x90 && len >= 3)) snd_seq_ev_set_noteoff(&ev, ch, m[1], 0);
         else if (type == 0xB0 && len >= 3) snd_seq_ev_set_controller(&ev, ch, m[1], m[2]);
@@ -292,7 +291,7 @@ static void feed_transport(Plugin *w, int32_t frames) {
         double start = w->last_ppq, end = ti->ppqPos;
         /* a tempo change makes the host's ppqPos step back slightly: that is not a loop wrap, and re-covering
          * the block would play its notes twice. Hold the high-water mark until the position catches up. */
-        if (end - start > 2.5 * blk || end < start || ti->tempo != w->last_tempo_seen)
+        if (ti->tempo != w->last_tempo_seen && w->last_tempo_seen > 0)   /* tempo changes only: loop wraps are routine */
             LOG("[acid_vst] ppq %.4f -> %.4f (d %.4f, expected %.4f) tempo %.3f -> %.3f next_k %ld\n",
                 start, end, end - start, blk, w->last_tempo_seen, ti->tempo, w->next_k);
         w->last_tempo_seen = ti->tempo;
