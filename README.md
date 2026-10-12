@@ -29,8 +29,8 @@ on both pages.
 
 | Control | What it does |
 |---|---|
-| GENERATE | Re-roll the whole pattern from a new random seed. DENSITY, ACCENT, SLIDE, OCTAVES and ALGO are read at this moment, so they shape the *next* pattern, not the one playing |
-| MUTATE | Nudge about 25% of the steps in place (rest/note, pitch), keeping the pattern recognisable. Repeat it to keep evolving |
+| GENERATE | Pick a new random seed and start a new pattern. Clears every locked step (see EDIT) |
+| MUTATE | Nudge about 25% of the steps in place (rest/note, pitch), keeping the pattern recognisable. Repeat it to keep evolving. Mutated steps are locked, so they survive knob moves |
 | DENSITY | Chance that a step is a note rather than a rest |
 | ACCENT | Chance that a note is accented (louder) |
 | SLIDE | Chance that a note slides into the next step, 303-style. A slide into a rest becomes a plain note |
@@ -44,7 +44,17 @@ on both pages.
 | MIDI CH | MIDI channel the line plays on |
 | BLEND A>B | The same control as on GLOBAL |
 
-DENSITY, ACCENT, SLIDE and OCTAVES only affect the next GENERATE or MUTATE.
+DENSITY, ACCENT, SLIDE, OCTAVES, ALGO, LENGTH and SCALE reshape the playing pattern live from the current seed, so you can sweep them without losing its character. Returning a knob to the same value gives back the same pattern. Only GENERATE picks a new seed. Patterns saved with 1.0.x will sound different, because the same seed now maps to a different pattern.
+
+### SEQ A EDIT and SEQ B EDIT
+Each line has an edit page with 16 steps at a time. The STEPS 1-16 / STEPS 17-32 switch picks which bar of a longer pattern you see. Per step:
+
+- **ON** switches the step between a note and a rest. A rest keeps its note, so switching it on brings the note back.
+- **NOTE** is a vertical slider in scale steps from the root. 0 is the root, negative goes up to one octave below it, and the top is as high as OCTAVES allows.
+- **ACC** and **SLIDE** are independent, so a step can be both, as on a 303. GENERATE rolls them independently too.
+- **LOCK** marks a step as hand-edited. A locked step keeps its note, accent and slide when DENSITY, ACCENT, SLIDE, OCTAVES, ALGO, LENGTH or SCALE reshape the pattern. Editing a step locks it. Tap LOCK to hand it back to the knobs.
+
+Locks are saved with the project and cleared by GENERATE and REGEN.
 
 ### GLOBAL
 | Control | What it does |
@@ -71,7 +81,7 @@ repeatable rather than random.
 | FILL | A plays, and B fills A's rests | -63 is A alone, centre is the fill result, +64 is B alone |
 | XOR | Plays only where exactly one line has a note: interlocking, syncopated | Same sweep as FILL |
 | LOCK | Plays only where both lines have a note: sparse and tight | Same sweep as FILL |
-| CHAIN | Call and response: A plays a full pass, then B answers with a full pass | Sets the pass ratio. Centre is one pass each, and the ends give one side up to 8:1 |
+| CHAIN | Call and response: A plays a full pass, then B answers with a full pass | Snaps to real pass ratios, 8:1 down to 1:1 and on to 1:8, plus A only and B only. A readout above the knob shows the current ratio |
 
 Settings are saved with your project.
 

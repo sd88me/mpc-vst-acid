@@ -69,7 +69,13 @@
 #define ACID_MAX_TUNE 24     /* Seq B's interval from Seq A, +/- two octaves */
 #define ACID_MAX_TRANSPOSE 48
 
-typedef enum { STEP_REST = 0, STEP_NOTE = 1, STEP_ACCENT = 2, STEP_SLIDE = 3 } step_kind_t;
+/* STEP_ACCSLIDE (4) is both flags on one step, as on a real 303: accent and slide
+ * are rolled independently by the generators. */
+typedef enum { STEP_REST = 0, STEP_NOTE = 1, STEP_ACCENT = 2, STEP_SLIDE = 3, STEP_ACCSLIDE = 4 } step_kind_t;
+#define STEP_IS_ACCENT(k) ((k) == STEP_ACCENT || (k) == STEP_ACCSLIDE)
+#define STEP_IS_SLIDE(k)  ((k) == STEP_SLIDE  || (k) == STEP_ACCSLIDE)
+static uint8_t step_kind_of(int acc, int sld) { return (uint8_t)(acc && sld ? STEP_ACCSLIDE : acc ? STEP_ACCENT : sld ? STEP_SLIDE : STEP_NOTE); }
+static uint8_t step_drop_slide(uint8_t k) { return k == STEP_ACCSLIDE ? STEP_ACCENT : k == STEP_SLIDE ? STEP_NOTE : k; }
 
 /* Scale degrees in semitones from root -- ported verbatim from tb3po. */
 typedef struct { const char *name; int degrees[12]; int len; } scale_t;
@@ -143,9 +149,13 @@ typedef struct {
     /* Pattern */
     uint8_t steps[MAX_STEPS];
     uint8_t degrees[MAX_STEPS];
-    uint8_t octaves[MAX_STEPS];
+    int8_t octaves[MAX_STEPS];   /* signed: the edit page can go one octave below the root */
     int length;
     int position;
+    /* Hand edits (edit page): a locked step keeps its stored note/kind when the
+     * knobs re-derive the pattern from the seed. Generate clears every lock. */
+    uint8_t locked[MAX_STEPS];
+    int edit_bar;       /* which 16 steps the edit page's cells show (0 or 1) */
 
     /* Knobs */
     float density, accent, slide;
@@ -283,35 +293,40 @@ static float rng_next_f(uint32_t *rng) {
 static void gen_primary(const acid_seq_t *s, uint32_t *rng, int scale_idx,
                          uint8_t *out_steps, uint8_t *out_deg, uint8_t *out_oct) {
     const scale_t *sc = &SCALES[scale_idx];
+    /* Every step draws the same number of randoms whether or not it ends up a
+     * rest, so a given seed assigns each step a fixed set of "rolls" and the
+     * knobs (density/accent/slide/octaves) only move thresholds against them:
+     * turning a knob re-derives the pattern from the same seed instead of
+     * producing a different one. */
     for (int i = 0; i < s->length; i++) {
-        if (rng_next_f(rng) > s->density) {
-            out_steps[i] = STEP_REST;
-            continue;
-        }
+        float r_gate = rng_next_f(rng), r_beat = rng_next_f(rng), r_deg = rng_next_f(rng);
+        float r_oct = rng_next_f(rng), r_acc = rng_next_f(rng), r_sld = rng_next_f(rng);
+        /* a rest keeps the note it would have had, so the edit page's gate lane can switch it on */
         int on_beat = (i % 4 == 0);
         int degree;
-        if (on_beat && rng_next_f(rng) < 0.35f) {
+        if (on_beat && r_beat < 0.35f) {
             degree = 0;
         } else {
-            degree = (int)(rng_next_f(rng) * (float)sc->len);
+            degree = (int)(r_deg * (float)sc->len);
             if (degree >= sc->len) degree = sc->len - 1;
         }
         out_deg[i] = (uint8_t)degree;
 
-        int oct = (int)(rng_next_f(rng) * (float)s->octave_range);
+        int oct = (int)(r_oct * (float)s->octave_range);
         if (oct >= s->octave_range) oct = s->octave_range - 1;
         out_oct[i] = (uint8_t)oct;
 
-        int kind = STEP_NOTE;
-        if (rng_next_f(rng) < s->accent) kind = STEP_ACCENT;
-        if (rng_next_f(rng) < s->slide) kind = STEP_SLIDE;
-        out_steps[i] = (uint8_t)kind;
+        if (r_gate > s->density) {
+            out_steps[i] = STEP_REST;
+            continue;
+        }
+        out_steps[i] = step_kind_of(r_acc < s->accent, r_sld < s->slide);
     }
 
     /* Slide-into-rest is a no-op -- demote to a plain note. */
     for (int i = 0; i < s->length; i++) {
         int nxt = (i + 1) % s->length;
-        if (out_steps[i] == STEP_SLIDE && out_steps[nxt] == STEP_REST) out_steps[i] = STEP_NOTE;
+        if (STEP_IS_SLIDE(out_steps[i]) && out_steps[nxt] == STEP_REST) out_steps[i] = step_drop_slide(out_steps[i]);
     }
 
     int any = 0;
@@ -351,39 +366,39 @@ static void gen_secondary(const acid_seq_t *s, uint32_t *rng, int scale_idx,
         accented[pos] = 1;
     }
 
+    /* Same fixed-rolls rule as gen_primary: the bag is drawn from on every
+     * step (rest or not) so the degree sequence doesn't shift with density. */
     for (int i = 0; i < s->length; i++) {
         int step_delta = (int)(rng_next_f(rng) * 3.0f) - 1; /* -1, 0, +1 */
-        walk += step_delta;
-        if (walk < 0) walk = 0;
-        if (walk > 8) walk = 8;
-
-        if (walk < 2) {
-            out_steps[i] = STEP_REST;
-            continue;
-        }
+        float r_bag = rng_next_f(rng), r_oct = rng_next_f(rng), r_sld = rng_next_f(rng);
 
         if (bag_n == 0) {
             bag_n = sc->len;
             for (int k = 0; k < bag_n; k++) bag[k] = (uint8_t)k;
         }
-        int idx = (int)(rng_next_f(rng) * (float)bag_n);
+        int idx = (int)(r_bag * (float)bag_n);
         if (idx >= bag_n) idx = bag_n - 1;
         int degree = bag[idx];
         bag[idx] = bag[--bag_n];
-        out_deg[i] = (uint8_t)degree;
 
-        int oct = (int)(rng_next_f(rng) * (float)s->octave_range);
+        walk += step_delta;
+        if (walk < 0) walk = 0;
+        if (walk > 8) walk = 8;
+
+        int oct = (int)(r_oct * (float)s->octave_range);
         if (oct >= s->octave_range) oct = s->octave_range - 1;
+        out_deg[i] = (uint8_t)degree;
         out_oct[i] = (uint8_t)oct;
-
-        int kind = accented[i] ? STEP_ACCENT : STEP_NOTE;
-        if (rng_next_f(rng) < s->slide) kind = STEP_SLIDE;
-        out_steps[i] = (uint8_t)kind;
+        if (walk < 2) {
+            out_steps[i] = STEP_REST;
+            continue;
+        }
+        out_steps[i] = step_kind_of(accented[i], r_sld < s->slide);
     }
 
     for (int i = 0; i < s->length; i++) {
         int nxt = (i + 1) % s->length;
-        if (out_steps[i] == STEP_SLIDE && out_steps[nxt] == STEP_REST) out_steps[i] = STEP_NOTE;
+        if (STEP_IS_SLIDE(out_steps[i]) && out_steps[nxt] == STEP_REST) out_steps[i] = step_drop_slide(out_steps[i]);
     }
 
     int any = 0;
@@ -436,14 +451,14 @@ static void mutate_pattern(acid_seq_t *s, int scale_idx) {
     uint32_t rng = s->rng;
     for (int i = 0; i < s->length; i++) {
         if (rng_next_f(&rng) >= 0.25f) continue;
+        s->locked[i] = 1;   /* a mutated step survives knob moves */
         if (rng_next_f(&rng) < 0.5f) {
             if (rng_next_f(&rng) > s->density) {
                 s->steps[i] = STEP_REST;
             } else {
-                int kind = STEP_NOTE;
-                if (rng_next_f(&rng) < s->accent) kind = STEP_ACCENT;
-                if (rng_next_f(&rng) < s->slide) kind = STEP_SLIDE;
-                s->steps[i] = (uint8_t)kind;
+                int acc = rng_next_f(&rng) < s->accent;
+                int sld = rng_next_f(&rng) < s->slide;
+                s->steps[i] = step_kind_of(acc, sld);
             }
         } else {
             int degree = (int)(rng_next_f(&rng) * (float)sc->len);
@@ -451,7 +466,7 @@ static void mutate_pattern(acid_seq_t *s, int scale_idx) {
             s->degrees[i] = (uint8_t)degree;
             int oct = (int)(rng_next_f(&rng) * (float)s->octave_range);
             if (oct >= s->octave_range) oct = s->octave_range - 1;
-            s->octaves[i] = (uint8_t)oct;
+            s->octaves[i] = (int8_t)oct;
         }
     }
     s->rng = rng;
@@ -691,7 +706,7 @@ static int emit_step_for_seq(acid_inst_t *t, int seq_idx, int pitch_seq, int pre
      * from the other sequencer while rhythm/slide/accent stay this one's. */
     const acid_seq_t *ps = &t->seq[pitch_seq];
     int note = note_for_step(ps, t->scale, t->root, t->live_transpose, play_idx(ps, ps->position));
-    int is_accent = (kind == STEP_ACCENT);
+    int is_accent = STEP_IS_ACCENT(kind);
     int vel;
     if (t->cv_mode) {
         vel = is_accent ? 127 : 1;
@@ -704,7 +719,7 @@ static int emit_step_for_seq(acid_inst_t *t, int seq_idx, int pitch_seq, int pre
 
     uint8_t slide_cc = t->cv_mode ? 1 : 65;   /* FORCE-ONLY: Mod Wheel in CV Mode */
 
-    int was_slide = (prev_pos >= 0 && s->steps[play_idx(s, prev_pos)] == STEP_SLIDE);
+    int was_slide = (prev_pos >= 0 && STEP_IS_SLIDE(s->steps[play_idx(s, prev_pos)]));
 
     /* FORCE-ONLY: every 0x80/0x90/0xB0 status byte below uses s->out_ch
      * (a_channel/b_channel) instead of upstream's fixed OUT_CH. */
@@ -792,7 +807,7 @@ static int process_dump_for_seq(acid_inst_t *t, int seq_idx, int frames, int sam
     int pidx = play_idx(s, s->dump_pos);
     uint8_t kind = s->steps[pidx];
     int prev_pos = s->dump_pos - 1;   /* -1 on the first step -- no prior step to slide from */
-    int was_slide = (prev_pos >= 0 && s->steps[play_idx(s, prev_pos)] == STEP_SLIDE);
+    int was_slide = (prev_pos >= 0 && STEP_IS_SLIDE(s->steps[play_idx(s, prev_pos)]));
 
     if (kind == STEP_REST) {
         if (s->dump_portamento_on && count < max_out) {
@@ -807,7 +822,7 @@ static int process_dump_for_seq(acid_inst_t *t, int seq_idx, int frames, int sam
         }
     } else {
         int note = note_for_step(s, t->scale, t->root, t->live_transpose, pidx);
-        int is_accent = (kind == STEP_ACCENT);
+        int is_accent = STEP_IS_ACCENT(kind);
         int vel = is_accent ? 118 : 72;
 
         if (was_slide) {
@@ -850,15 +865,20 @@ static int process_dump_for_seq(acid_inst_t *t, int seq_idx, int frames, int sam
  * alone .. 1 = B alone) maps to the B:A ratio r = w/(1-w): centre = 1:1,
  * w = 0.25 -> A x3 : B x1, w = 0.75 -> A x1 : B x3, capped at 8; the far ends
  * are A only / B only. */
+/* The 17 positions the Blend knob snaps to in Chain mode: 0 = A only,
+ * 1..7 = A passes 8..2 : 1 B, 8 = 1:1, 9..15 = 1 A : 2..8 B, 16 = B only. */
+static int chain_pos(const acid_inst_t *t) {
+    int p = ((t->blend + 63) * 16 + 63) / 127;
+    return p < 0 ? 0 : p > 16 ? 16 : p;
+}
+static void chain_snap(acid_inst_t *t) { t->blend = -63 + (chain_pos(t) * 127 + 8) / 16; }
+
 static void chain_counts(const acid_inst_t *t, int *na, int *nb) {
-    float w = (float)(t->blend + 63) / 127.0f;
-    if (w <= 0.02f) { *na = 1; *nb = 0; return; }
-    if (w >= 0.98f) { *na = 0; *nb = 1; return; }
-    float r = w / (1.0f - w);
-    if (r <= 1.0f) { *na = (int)(1.0f / r + 0.5f); *nb = 1; }
-    else           { *na = 1; *nb = (int)(r + 0.5f); }
-    if (*na > 8) *na = 8;
-    if (*nb > 8) *nb = 8;
+    int p = chain_pos(t);
+    if (p == 0)  { *na = 1; *nb = 0; return; }
+    if (p == 16) { *na = 0; *nb = 1; return; }
+    if (p <= 8)  { *na = 9 - p; *nb = 1; }
+    else         { *na = 1; *nb = p - 7; }
 }
 
 /* Park a sequencer one step before its first step, so the next
@@ -953,6 +973,7 @@ static int advance_all(acid_inst_t *t, uint8_t out_msgs[][3], int out_lens[], in
             if (locked ? (k > 0 && k % AUTO_GEN_BAR_STEPS[s->auto_gen_idx - 1] == 0)
                        : s->auto_gen_step_count >= AUTO_GEN_BAR_STEPS[s->auto_gen_idx - 1]) {
                 s->auto_gen_step_count = 0;
+                memset(s->locked, 0, sizeof s->locked);
                 regenerate_pattern(s, t->scale, rng_next_u32(&s->rng));
                 if (s->position >= s->length) s->position = s->length - 1;
             }
@@ -1280,7 +1301,7 @@ static int acid_tick(void *instance, int frames, int sample_rate,
             s->gate_samples_remaining -= frames;
             if (s->gate_samples_remaining <= 0) {
                 s->gate_samples_remaining = 0;
-                if (s->steps[play_idx(s, s->position)] != STEP_SLIDE && count < max_out) {
+                if (!STEP_IS_SLIDE(s->steps[play_idx(s, s->position)]) && count < max_out) {
                     count += kill_seq_note(t, i, &out_msgs[count], &out_lens[count], max_out - count);
                 }
             }
@@ -1298,6 +1319,52 @@ static float parse_float(const char *s, float fallback) {
     return (float)strtod(s, NULL);
 }
 
+/* Knob moves re-derive the pattern from the current seed (see gen_primary's
+ * fixed-rolls note) without touching the live rng, so Mutate/Jitter/Auto Regen
+ * streams carry on undisturbed. Only Generate (and Auto Regen) pick a new seed. */
+static void rederive_pattern(acid_seq_t *s, int scale_idx) {
+    uint32_t live = s->rng;
+    uint8_t ks[MAX_STEPS], kd[MAX_STEPS], ko[MAX_STEPS];
+    memcpy(ks, s->steps, MAX_STEPS); memcpy(kd, s->degrees, MAX_STEPS); memcpy(ko, s->octaves, MAX_STEPS);
+    regenerate_pattern(s, scale_idx, s->seed);
+    for (int i = 0; i < MAX_STEPS; i++)
+        if (s->locked[i]) { s->steps[i] = ks[i]; s->degrees[i] = kd[i]; s->octaves[i] = ko[i]; }
+    s->rng = live;
+}
+
+/* Edit-page note cell value: scale steps from the root, negative = below it. */
+static int edit_note_value(const acid_seq_t *s, int scale_idx, int i) {
+    return (int)s->octaves[i] * SCALES[scale_idx].len + (int)s->degrees[i];
+}
+
+/* Applies one edit-page cell write. Returns 0 if the cell is past Length. */
+static int edit_cell_set(acid_seq_t *s, int scale_idx, int cell, const char *field, int v) {
+    int i = s->edit_bar * 16 + cell;
+    if (cell < 0 || cell > 15 || i >= s->length) return 0;
+    const scale_t *sc = &SCALES[scale_idx];
+    if (strcmp(field, "lock") == 0) {
+        s->locked[i] = v ? 1 : 0;
+        return 1;
+    }
+    if (strcmp(field, "gate") == 0) {
+        s->steps[i] = v ? (s->steps[i] == STEP_REST ? STEP_NOTE : s->steps[i]) : STEP_REST;
+    } else if (strcmp(field, "note") == 0) {
+        int top = sc->len * s->octave_range - 1;
+        if (v < -sc->len) v = -sc->len;
+        if (v > top) v = top;
+        int deg = ((v % sc->len) + sc->len) % sc->len;
+        s->degrees[i] = (uint8_t)deg;
+        s->octaves[i] = (int8_t)((v - deg) / sc->len);
+    } else if (strcmp(field, "acc") == 0 || strcmp(field, "sld") == 0) {
+        if (s->steps[i] == STEP_REST) return 1;          /* nothing to accent on a rest */
+        int acc = STEP_IS_ACCENT(s->steps[i]), sld = STEP_IS_SLIDE(s->steps[i]);
+        if (field[0] == 'a') acc = v ? 1 : 0; else sld = v ? 1 : 0;
+        s->steps[i] = step_kind_of(acc, sld);
+    } else return 0;
+    s->locked[i] = 1;   /* touching a step locks it */
+    return 1;
+}
+
 static void acid_set_param(void *instance, const char *key, const char *val) {
     acid_inst_t *t = (acid_inst_t *)instance;
     if (!t || !key) return;
@@ -1309,13 +1376,31 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
 
     if (seq_idx >= 0) {
         acid_seq_t *s = &t->seq[seq_idx];
-        if (strcmp(k, "generate") == 0) {
+        if (k[0] == 'e' && k[1] >= '0' && k[1] <= '9') {          /* edit cell: e<n>_note|acc|sld|lock */
+            char *us = NULL;
+            int cell = (int)strtol(k + 1, &us, 10);
+            if (us && *us == '_') edit_cell_set(s, t->scale, cell, us + 1, parse_int(val, 0));
+        } else if (strcmp(k, "edit_bar") == 0) {
+            s->edit_bar = parse_int(val, 0) ? 1 : 0;
+        } else if (strcmp(k, "locks") == 0) {                      /* project reload: "idx.kind.deg.oct," per locked step */
+            memset(s->locked, 0, sizeof s->locked);
+            const char *q = val;
+            while (q && *q) {
+                int i, kd, dg, oc, used = 0;
+                if (sscanf(q, "%d.%d.%d.%d,%n", &i, &kd, &dg, &oc, &used) < 4 || !used) break;
+                if (i >= 0 && i < MAX_STEPS && kd >= 0 && kd <= 4) {
+                    s->locked[i] = 1; s->steps[i] = (uint8_t)kd; s->degrees[i] = (uint8_t)dg; s->octaves[i] = (int8_t)oc;
+                }
+                q += used;
+            }
+        } else if (strcmp(k, "generate") == 0) {
             uint32_t seed = rng_next_u32(&s->rng);
+            memset(s->locked, 0, sizeof s->locked);
             regenerate_pattern(s, t->scale, seed);
             if (s->position >= s->length) s->position = s->length - 1;
         } else if (strcmp(k, "seed") == 0) {   /* project reload: rebuild the pattern a saved Generate made */
             uint32_t seed = (uint32_t)strtoul(val, NULL, 10);
-            if (seed) { regenerate_pattern(s, t->scale, seed); if (s->position >= s->length) s->position = s->length - 1; }
+            if (seed) { memset(s->locked, 0, sizeof s->locked); regenerate_pattern(s, t->scale, seed); if (s->position >= s->length) s->position = s->length - 1; }
         } else if (strcmp(k, "mutate") == 0) {
             mutate_pattern(s, t->scale);
         } else if (strcmp(k, "dump") == 0) {
@@ -1332,21 +1417,25 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
             if (v < 0.0f) v = 0.0f;
             if (v > 1.0f) v = 1.0f;
             s->density = v;
+            rederive_pattern(s, t->scale);
         } else if (strcmp(k, "accent") == 0) {
             float v = parse_float(val, 0.4f);
             if (v < 0.0f) v = 0.0f;
             if (v > 1.0f) v = 1.0f;
             s->accent = v;
+            rederive_pattern(s, t->scale);
         } else if (strcmp(k, "slide") == 0) {
             float v = parse_float(val, 0.25f);
             if (v < 0.0f) v = 0.0f;
             if (v > 1.0f) v = 1.0f;
             s->slide = v;
+            rederive_pattern(s, t->scale);
         } else if (strcmp(k, "octaves") == 0) {
             int v = parse_int(val, 2);
             if (v < 1) v = 1;
             if (v > 3) v = 3;
             s->octave_range = v;
+            rederive_pattern(s, t->scale);
         } else if (strcmp(k, "length") == 0) {
             /* Declared as a float chain_param (min 2, max 32) so the knob rides
              * the range-normalised curve instead of one-step-per-detent -- the
@@ -1355,6 +1444,7 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
             if (v < MIN_LENGTH) v = MIN_LENGTH;
             if (v > MAX_STEPS) v = MAX_STEPS;
             s->length = v;
+            rederive_pattern(s, t->scale);
             if (s->position >= v) s->position = v - 1;
             if (s->offset >= v) s->offset = v - 1;  /* keep Offset < the new length */
         } else if (strcmp(k, "gate") == 0) {
@@ -1367,6 +1457,7 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
             if (v < 1) v = 1;
             if (v > 16) v = 16;
             s->algo = v;
+            rederive_pattern(s, t->scale);
         } else if (strcmp(k, "tune") == 0) {
             int v = parse_int(val, 0);
             if (v < -ACID_MAX_TUNE) v = -ACID_MAX_TUNE;
@@ -1411,15 +1502,18 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
         int v = parse_int(val, 9) % 12; if (v < 0) v += 12; t->root = v;
     } else if (strcmp(key, "scale") == 0) {
         int v = parse_int(val, 0); if (v < 0 || v >= NUM_SCALES) v = 0; t->scale = v;
+        for (int q = 0; q < NUM_SEQS; q++) rederive_pattern(&t->seq[q], t->scale);
     } else if (strcmp(key, "blend") == 0) {
         int v = parse_int(val, 0);
         if (v < -63) v = -63;
         if (v > 64) v = 64;
         t->blend = v;
+        if (t->blend_mode == BM_CHAIN) chain_snap(t);   /* Chain: the knob snaps to a real pass ratio */
     } else if (strcmp(key, "blend_mode") == 0) {
         int v = parse_int(val, 0); if (v < 0 || v >= NUM_BLEND_MODES) v = 0;
         if (v == BM_CHAIN && t->blend_mode != BM_CHAIN) t->chain_fresh = 1;
         t->blend_mode = v;
+        if (v == BM_CHAIN) chain_snap(t);
     } else if (strcmp(key, "reset_bars") == 0) {
         int v = parse_int(val, 4); if (v < 0 || v > 4) v = 4;
         t->reset_bars_idx = v;
@@ -1474,6 +1568,31 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
         else if (strcmp(k, "dir") == 0) n = snprintf(buf, buf_len, "%d", s->dir);
         else if (strcmp(k, "pos") == 0) n = snprintf(buf, buf_len, "%d", s->position);   /* test hook */
         else if (strcmp(k, "seed") == 0) n = snprintf(buf, buf_len, "%u", (unsigned)s->seed);
+        else if (strcmp(k, "edit_bar") == 0) n = snprintf(buf, buf_len, "%d", s->edit_bar);
+        else if (strcmp(k, "locks") == 0) {
+            n = 0;
+            for (int i = 0; i < s->length && i < MAX_STEPS; i++) {
+                if (!s->locked[i]) continue;
+                int w = snprintf(buf + n, buf_len - n, "%d.%d.%d.%d,", i, s->steps[i], s->degrees[i], s->octaves[i]);
+                if (w < 0 || n + w >= buf_len) break;
+                n += w;
+            }
+            if (n == 0) buf[0] = 0;
+        }
+        else if (k[0] == 'e' && k[1] >= '0' && k[1] <= '9') {
+            char *us = NULL;
+            int cell = (int)strtol(k + 1, &us, 10);
+            int i = s->edit_bar * 16 + cell;
+            if (!us || *us != '_' || cell > 15 || i >= MAX_STEPS) return -1;
+            const char *f = us + 1;
+            int inl = i < s->length;
+            if (strcmp(f, "note") == 0) n = snprintf(buf, buf_len, "%d", inl ? edit_note_value(s, t->scale, i) : 0);
+            else if (strcmp(f, "gate") == 0) n = snprintf(buf, buf_len, "%d", inl && s->steps[i] != STEP_REST);
+            else if (strcmp(f, "acc") == 0) n = snprintf(buf, buf_len, "%d", inl && STEP_IS_ACCENT(s->steps[i]));
+            else if (strcmp(f, "sld") == 0) n = snprintf(buf, buf_len, "%d", inl && STEP_IS_SLIDE(s->steps[i]));
+            else if (strcmp(f, "lock") == 0) n = snprintf(buf, buf_len, "%d", inl && s->locked[i]);
+            else return -1;
+        }
         else if (strcmp(k, "channel") == 0) n = snprintf(buf, buf_len, "%d", s->out_ch + 1);  /* FORCE-ONLY */
         else if (strcmp(k, "auto_gen") == 0) n = snprintf(buf, buf_len, "%d", s->auto_gen_idx);  /* FORCE-ONLY */
         else if (strcmp(k, "generate") == 0 || strcmp(k, "mutate") == 0 || strcmp(k, "dump") == 0) n = snprintf(buf, buf_len, "off");
@@ -1487,6 +1606,7 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
     else if (strcmp(key, "scale") == 0) n = snprintf(buf, buf_len, "%d", t->scale);
     else if (strcmp(key, "blend") == 0) n = snprintf(buf, buf_len, "%d", t->blend);
     else if (strcmp(key, "blend_mode") == 0) n = snprintf(buf, buf_len, "%d", t->blend_mode);
+    else if (strcmp(key, "chain_view") == 0) n = snprintf(buf, buf_len, "%d", chain_pos(t));   /* display-only: readout of the Chain ratio */
     else if (strcmp(key, "reset_bars") == 0) n = snprintf(buf, buf_len, "%d", t->reset_bars_idx);
     else if (strcmp(key, "swing") == 0) n = snprintf(buf, buf_len, "%d", t->swing_pct);
     else if (strcmp(key, "jitter") == 0) n = snprintf(buf, buf_len, "%.3f", t->jitter);

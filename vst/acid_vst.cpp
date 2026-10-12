@@ -108,6 +108,8 @@ struct Plugin {
     volatile int release[NPARAMS] = {0};
     bool held[NPARAMS] = {false};  /* momentary params: host currently reports them pressed */
     float open[NPARAMS] = {0};     /* popup "open" flags (popup.h): wrapper-only, not saved */
+    float told[NPARAMS];           /* edit-page cells: the value the host was last told (-1: nothing yet) */
+    int edit_scan = 0;
     double last_ppq = 0.0;
     bool was_playing = false;
     double last_tempo_seen = 0.0;
@@ -116,7 +118,7 @@ struct Plugin {
     int32_t last_flags = 0; double last_tempo = 0;   /* what the host last reported (periodic log) */
     snd_seq_t *seq = nullptr;
     int seq_port = -1;
-    char chunk[2048] = {0};
+    char chunk[8192] = {0};
     /* diagnostics: per-callback timing, logged periodically and on slow callbacks */
     double t_max = 0, t_sum = 0, t_last_log = 0;
     long blocks = 0, slow = 0;
@@ -175,6 +177,19 @@ static float str_to_norm(const param_t *p, const char *s) {
         return p->nopts > 1 ? (float)idx / (p->nopts - 1) : 0.0f;
     }
     return p->max > p->min ? clamp01((float)((std::atof(s) - p->min) / (p->max - p->min))) : 0.0f;
+}
+/* Edit-page cell params ("a_e3_note", "b_edit_bar" ...) mirror the pattern, which the engine changes
+ * behind the host's back (Generate, Mutate, the density knobs, the bar switch). They are derived state:
+ * pushed to the host from processReplacing, and left out of the saved chunk. */
+static bool is_edit_param(int i) {
+    const char *k = PARAMS[i].key;
+    return (k[0] == 'a' || k[0] == 'b') && k[1] == '_' && ((k[2] == 'e' && k[3] >= '0' && k[3] <= '9') || !std::strcmp(k + 2, "edit_bar"));
+}
+/* Params the engine changes behind the host's back and the host must be told about: the edit cells, the
+ * Chain readout, and Blend itself (it snaps to a pass ratio in Chain mode). */
+static bool is_pushed_param(int i) {
+    const char *k = PARAMS[i].key;
+    return is_edit_param(i) || !std::strcmp(k, "chain_view") || !std::strcmp(k, "blend");
 }
 static float get_norm(Plugin *w, int i) {
     char buf[64];
@@ -387,6 +402,14 @@ static void processReplacing(AEffect *e, float **in, float **out, int32_t n) {
     feed_transport(w, n);
     for (int i = 0; i < NPARAMS; i++)
         if (w->release[i]) { w->release[i] = 0; w->held[i] = false; w->master(&w->fx, audioMasterAutomate, i, 0, 0, 0.0f); }
+    if ((++w->edit_scan & 3) == 0) {   /* every 4th block: tell the host which edit cells changed (bounded per pass) */
+        int budget = 24;
+        for (int i = 0; i < NPARAMS && budget > 0; i++) {
+            if (!is_pushed_param(i)) continue;
+            float v = get_norm(w, i);
+            if (v != w->told[i]) { w->told[i] = v; w->master(&w->fx, audioMasterAutomate, i, 0, 0, v); budget--; }
+        }
+    }
     for (int32_t i = 0; i < n; i++) out[0][i] = out[1][i] = 0.0f;   /* MIDI generator: no audio */
 
     double t1 = now_ms(), dt = t1 - t0;
@@ -442,6 +465,7 @@ static void setParameter(AEffect *e, int32_t i, float n) {
         std::lock_guard<std::mutex> lk(w->lock);
         g_api->set_param(w->inst, p->key, buf);
     }
+    if (is_pushed_param(i)) w->told[i] = n;   /* the host already has this value: don't echo it back */
     if (!nudge) popup_picked(w->open, w->release, i);   /* a list pick closes it; a Q-Link nudge doesn't */
 }
 
@@ -530,7 +554,7 @@ static intptr_t dispatcher(AEffect *e, int32_t op, int32_t idx, intptr_t v, void
     case effGetChunk: {
         std::string s;
         for (int i = 0; i < NPARAMS; i++) {
-            if (PARAMS[i].momentary || popup_is(i)) continue;
+            if (PARAMS[i].momentary || popup_is(i) || is_edit_param(i) || !std::strcmp(PARAMS[i].key, "chain_view")) continue;
             char buf[32];
             int n;
             { std::lock_guard<std::mutex> lk(w->lock); n = g_api->get_param(w->inst, PARAMS[i].key, buf, sizeof buf); }
@@ -545,6 +569,14 @@ static intptr_t dispatcher(AEffect *e, int32_t op, int32_t idx, intptr_t v, void
             if (n <= 0) continue;
             buf[n < (int)sizeof buf ? n : (int)sizeof buf - 1] = 0;
             s += k; s += '='; s += buf; s += ';';
+        }
+        for (const char *k : {"a_locks", "b_locks"}) {   /* hand-edited (locked) steps; after the seed so they re-apply on top of it */
+            char big[512];
+            int n;
+            { std::lock_guard<std::mutex> lk(w->lock); n = g_api->get_param(w->inst, k, big, sizeof big); }
+            if (n <= 0) continue;
+            big[n < (int)sizeof big ? n : (int)sizeof big - 1] = 0;
+            s += k; s += '='; s += big; s += ';';
         }
         copy_str(w->chunk, s, sizeof w->chunk);
         *(void **)p = w->chunk;
@@ -580,6 +612,7 @@ extern "C" __attribute__((visibility("default"))) AEffect *VSTPluginMain(audioMa
         }
     }
     Plugin *w = new Plugin();
+    for (int i = 0; i < NPARAMS; i++) w->told[i] = -1.0f;
     w->master = master;
     w->inst = g_api->create_instance(".", nullptr);
     if (!w->inst) { LOG("[acid_vst] create_instance failed\n"); delete w; return nullptr; }
