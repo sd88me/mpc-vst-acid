@@ -76,7 +76,8 @@ enum {
     effGetVendorVersion = 49, effCanDo = 51, effGetVstVersion = 58,
 };
 enum { audioMasterAutomate = 0, audioMasterGetTime = 7, audioMasterUpdateDisplay = 42 };
-enum { kVstTransportPlaying = 1 << 1, kVstPpqPosValid = 1 << 9, kVstTempoValid = 1 << 10 };
+enum { kVstTransportPlaying = 1 << 1, kVstTransportCycleActive = 1 << 2, kVstPpqPosValid = 1 << 9, kVstTempoValid = 1 << 10,
+       kVstCyclePosValid = 1 << 12 };
 enum { effFlagsCanReplacing = 1 << 4, effFlagsProgramChunks = 1 << 5, effFlagsIsSynth = 1 << 8 };
 
 /* ---------------------------------------------------------------------------
@@ -251,6 +252,43 @@ static void alsa_close(Plugin *w) {
     w->seq = nullptr;
 }
 
+/* Send the song positions [start, end): 16th-note steps on the song-position grid (swing delays the odd ones), then the 24-PPQN
+ * heartbeat pulses. Steps go first so the core is already grid-driven when the pulses arrive. */
+static void play_span(Plugin *w, double start, double end) {
+    const double step = 1.0 / 24.0;   /* 24 PPQN, in quarter notes */
+    uint8_t out[MIDI_FX_MAX_OUT_MSGS][3];
+    int olen[MIDI_FX_MAX_OUT_MSGS];
+    char sbuf[16] = {0};
+    { std::lock_guard<std::mutex> lk(w->lock); g_api->get_param(w->inst, "swing", sbuf, sizeof sbuf); }
+    int pct = std::atoi(sbuf);
+    double d = pct > 50 ? std::min(0.5, (pct - 50) / 50.0) : 0.0;
+    long n0 = (long)std::floor(start * 4.0) - 1, n1 = (long)std::ceil(end * 4.0) + 1;
+    for (long k = n0 < 0 ? 0 : n0; k <= n1; k++) {
+        double t = k * 0.25 + ((k & 1) ? d * 0.25 : 0.0);
+        if (t < start - 1e-9 || t >= end - 1e-9) continue;
+        /* Each step names its absolute 16th in the song: the core plays the pattern step that song position
+         * calls for, so a doubled or lost host step (fast tempo changes do both) can't shift it. A 16th already
+         * fired is skipped so no note doubles. */
+        if (w->next_k >= 0 && k < w->next_k) continue;
+        char kb[24];
+        std::snprintf(kb, sizeof kb, "%ld", k);
+        uint8_t st = 0xF9;
+        int n;
+        { std::lock_guard<std::mutex> lk(w->lock);
+          g_api->set_param(w->inst, "song_step", kb);
+          n = g_api->process_midi(w->inst, &st, 1, out, olen, MIDI_FX_MAX_OUT_MSGS); }
+        alsa_send(w, out, olen, n);
+        w->steps++;
+        w->next_k = k + 1;
+    }
+    for (double next = std::ceil(start / step - 1e-9) * step; next < end - 1e-9; next += step) {
+        uint8_t msg = 0xF8;
+        int n;
+        { std::lock_guard<std::mutex> lk(w->lock); n = g_api->process_midi(w->inst, &msg, 1, out, olen, MIDI_FX_MAX_OUT_MSGS); }
+        alsa_send(w, out, olen, n);
+    }
+}
+
 /* ---------------------------------------------------------------------------
  * Transport / clock synthesis: audioMasterGetTime -> synthetic 24-PPQN clock,
  * the same byte stream host_shim.cpp fed acid_core.c from real MIDI clock.
@@ -258,7 +296,7 @@ static void alsa_close(Plugin *w) {
  * ------------------------------------------------------------------------- */
 static void feed_transport(Plugin *w, int32_t frames) {
     VstTimeInfo *ti = (VstTimeInfo *)w->master(&w->fx, audioMasterGetTime, 0,
-                                                kVstTempoValid | kVstPpqPosValid, 0, 0);
+                                                kVstTempoValid | kVstPpqPosValid | kVstCyclePosValid, 0, 0);
     bool playing = ti && (ti->flags & kVstTransportPlaying);
     if (ti) { w->last_flags = ti->flags; w->last_tempo = ti->tempo; }
     if (ti && (ti->flags & kVstTempoValid) && ti->tempo > 0) g_bpm.store((float)ti->tempo);   /* the core's gate lengths and fallback clock use this */
@@ -286,52 +324,41 @@ static void feed_transport(Plugin *w, int32_t frames) {
     w->was_playing = playing;
 
     if (playing && ti) {
-        const double step = 1.0 / 24.0;   /* 24 PPQN, in quarter notes */
+        /* The steps of THIS block, [ppq, ppq + blk), go out now, at its start (as StepRunner-8 does): up to a block early
+         * instead of a block late. MPC's MIDI input comes after the plugin, so earlier is closer to the grid (a user had to
+         * delay their other tracks to line up a plugin that sent the block that had just played). last_ppq is the high-water
+         * mark: everything before it has been sent. */
         double blk = frames * (ti->tempo > 0 ? ti->tempo : g_bpm.load()) / (60.0 * (ti->sampleRate > 0 ? ti->sampleRate : 44100.0));
-        double start = w->last_ppq, end = ti->ppqPos;
-        /* a tempo change makes the host's ppqPos step back slightly: that is not a loop wrap, and re-covering
-         * the block would play its notes twice. Hold the high-water mark until the position catches up. */
+        double p = ti->ppqPos, start = w->last_ppq, end = p + blk;
         if (ti->tempo != w->last_tempo_seen && w->last_tempo_seen > 0)   /* tempo changes only: loop wraps are routine */
-            LOG("[acid_vst] ppq %.4f -> %.4f (d %.4f, expected %.4f) tempo %.3f -> %.3f next_k %ld\n",
-                start, end, end - start, blk, w->last_tempo_seen, ti->tempo, w->next_k);
+            LOG("[acid_vst] ppq %.4f -> %.4f (d %.4f, expected ~0) tempo %.3f -> %.3f next_k %ld\n",
+                start, p, p - start, w->last_tempo_seen, ti->tempo, w->next_k);
         w->last_tempo_seen = ti->tempo;
-        bool jitter = end < start && start - end < 1.0;
-        if (jitter) end = start;
-        if (end < start) { start = end - blk; w->next_k = -1; }                 /* loop wrap: re-cover the block that straddles the loop start so its first 16th isn't lost */
-        else if (end - start > 1.0) { start = end - blk; w->next_k = -1; }      /* forward jump/locate: play from the landing block, don't flood */
-        /* 16th-note steps, placed on the song-position grid (swing delays the odd ones). Done before the
-         * heartbeat pulses so the core is already grid-driven when they arrive. */
-        char sbuf[16] = {0};
-        { std::lock_guard<std::mutex> lk(w->lock); g_api->get_param(w->inst, "swing", sbuf, sizeof sbuf); }
-        int pct = std::atoi(sbuf);
-        double d = pct > 50 ? std::min(0.5, (pct - 50) / 50.0) : 0.0;
-        long n0 = (long)std::floor(start * 4.0) - 1, n1 = (long)std::ceil(end * 4.0) + 1;
-        for (long k = n0 < 0 ? 0 : n0; k <= n1; k++) {
-            double t = k * 0.25 + ((k & 1) ? d * 0.25 : 0.0);
-            if (t < start - 1e-9 || t >= end - 1e-9) continue;
-            /* Each step names its absolute 16th in the song: the core plays the pattern step that song position
-             * calls for, so a doubled or lost host step (fast tempo changes do both) can't shift it. A 16th already
-             * fired is skipped so no note doubles. */
-            if (w->next_k >= 0 && k < w->next_k) continue;
-            char kb[24];
-            std::snprintf(kb, sizeof kb, "%ld", k);
-            uint8_t st = 0xF9;
-            int n;
-            { std::lock_guard<std::mutex> lk(w->lock);
-              g_api->set_param(w->inst, "song_step", kb);
-              n = g_api->process_midi(w->inst, &st, 1, out, olen, MIDI_FX_MAX_OUT_MSGS); }
-            alsa_send(w, out, olen, n);
-            w->steps++;
-            w->next_k = k + 1;
+        /* MPC's loop (verified on a Force, MPC OS 3.9.1: cycle flags set, cycleStart/EndPos = the loop; the block before a
+         * wrap covers the loop end, the next reports a position just after the loop start). */
+        bool cyc = (ti->flags & kVstTransportCycleActive) && (ti->flags & kVstCyclePosValid) && ti->cycleEndPos > ti->cycleStartPos + 0.25;
+        double ls = cyc ? ti->cycleStartPos : 0.0, le = cyc ? ti->cycleEndPos : 0.0;
+        /* p behind what was sent by less than a beat: block jitter (MPC's ppq wobbles up to 0.0009 beat) or a tempo change (ppq
+         * steps back a little, then crawls): keep the high-water mark, so nothing plays twice. By more: a wrap the host did not
+         * report, or a locate. The block before was covered by the look-ahead, so carry on from here, less a little more than
+         * the jitter (a wrap reported at 0.0001 still plays the loop start's 16th) -- except after an unreported wrap, whose
+         * loop start the look-ahead may already have played (as the 16th after the loop end). */
+        if (std::fabs(p - start) > 1.0) {
+            bool in_loop = cyc && p >= ls - 0.002 && p < le;
+            start = in_loop ? std::max(p - 0.002, ls) : p < start ? p : p - 0.002;
+            w->next_k = -1;
         }
-        double next = std::ceil(start / step) * step;
-        for (; next < end + 1e-9; next += step) {
-            msg[0] = 0xF8;
-            int n;
-            { std::lock_guard<std::mutex> lk(w->lock); n = g_api->process_midi(w->inst, msg, 1, out, olen, MIDI_FX_MAX_OUT_MSGS); }
-            alsa_send(w, out, olen, n);
+        if (end > start) {
+            if (cyc && p >= ls && p < le && end > le) {   /* the loop end falls in this block: up to it, then on from the loop start */
+                play_span(w, start, le);
+                w->next_k = -1;
+                w->last_ppq = ls + (end - le);
+                play_span(w, ls, w->last_ppq);
+            } else {
+                play_span(w, start, end);
+                w->last_ppq = end;
+            }
         }
-        if (!jitter) w->last_ppq = ti->ppqPos;
     }
 
     int n;
