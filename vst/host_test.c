@@ -31,7 +31,7 @@ struct AEffect {
 };
 typedef struct { double samplePos, sampleRate, nanoSeconds, ppqPos, tempo, barStartPos, cycleStartPos, cycleEndPos;
                  int32_t timeSigNumerator, timeSigDenominator, smpteOffset, smpteFrameRate, samplesToNextClock, flags; } TI;
-enum { kPlaying = 1 << 1, kPpq = 1 << 9, kTempo = 1 << 10 };
+enum { kPlaying = 1 << 1, kCycle = 1 << 2, kPpq = 1 << 9, kTempo = 1 << 10, kCyclePos = 1 << 12 };
 
 extern AEffect *VSTPluginMain(cb);
 extern long acid_dbg_steps(AEffect *);
@@ -131,7 +131,7 @@ int main(void) {
         double p = 3.3;
         for (; p < 7.3; p += ppb) { g_ti.ppqPos = p; g->pr(g, 0, out, 128); }
         long got = acid_dbg_steps(g) - s0, exp = 0;
-        for (long k = 0; k < 100; k++) if (k * 0.25 >= 3.3 && k * 0.25 < p - ppb) exp++;
+        for (long k = 0; k < 100; k++) if (k * 0.25 >= 3.3 && k * 0.25 < p) exp++;   /* the last block (at p - ppb) plays up to p */
         printf("grid: mid-song start 3.3 -> %ld steps (expect %ld)\n", got, exp);
         if (labs(got - exp) > 0) { printf("FAIL mid-song step count\n"); fails++; }
         /* (3) tempo change: the host's ppqPos steps back a little -- no step may fire twice */
@@ -162,6 +162,29 @@ int main(void) {
         long lastk = (long)ceil(q * 4.0 - 1e-9) - 1;
         printf("grid: tempo lurches -> pattern step %d (song says %ld)\n", acid_dbg_pos(g), lastk % 16);
         if (acid_dbg_pos(g) != lastk % 16) { printf("FAIL pattern drifted off the song position\n"); fails++; }
+        /* (5) MPC's loop, reported as cycleStart/EndPos with the cycle flags (as on a Force, MPC OS 3.9.1), with the ppq jitter
+         * measured there (-0.0009..+0.0002 beat on the wrapped position). Each 16th fires in the block that holds it, at the
+         * block's start (never a block late), none is lost or doubled at the wraps, and the pattern follows the song. */
+        g_ti.flags = 0; g->pr(g, 0, out, 128);
+        g_ti.flags = kPlaying | kPpq | kTempo | kCycle | kCyclePos; g_ti.cycleStartPos = 0.0; g_ti.cycleEndPos = 4.0;
+        {
+            long base = acid_dbg_steps(g); int early_late = 0; double A = 0.0;
+            for (long k = 0; A < 4.0 * 50; k++, A += ppb) {
+                unsigned h = (unsigned)k * 2654435761u;
+                double jit = k ? ((h >> 8) % 1101) / 1e6 - 0.0009 : 0.0;
+                g_ti.ppqPos = fmod(A, 4.0) + jit; g->pr(g, 0, out, 128);
+                long fired = acid_dbg_steps(g) - base;
+                long lo = (long)ceil((A + ppb - 0.0021) * 4.0 - 1e-9), hi = (long)ceil((A + ppb + 0.0011) * 4.0 - 1e-9);   /* 16ths before the block's end */
+                if (fired < lo || fired > hi) early_late++;
+            }
+            long fired = acid_dbg_steps(g) - base, lastk = (long)ceil(A * 4.0 - 1e-9) - 1;
+            printf("grid: reported loop, jittered ppq -> %ld steps in 50 loops (expect 800), %d blocks not on time, pattern step %d (song %ld)\n",
+                   fired, early_late, acid_dbg_pos(g), lastk % 16);
+            if (labs(fired - 800) > 1) { printf("FAIL reported loop step count\n"); fails++; }
+            if (early_late) { printf("FAIL steps not sent with the block that holds them\n"); fails++; }
+            if (acid_dbg_pos(g) != lastk % 16) { printf("FAIL pattern off the song position after loops\n"); fails++; }
+        }
+        g_ti.flags = kPlaying | kPpq | kTempo;
         g->d(g, 1, 0, 0, 0, 0);
     }
 
