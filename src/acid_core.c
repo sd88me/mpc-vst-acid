@@ -47,6 +47,7 @@
  * Move/Force delta list.
  */
 
+#include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -204,6 +205,7 @@ typedef struct {
     long dump_sample_accum;     /* accumulator toward the next dump step */
     int dump_last_note;         /* -1 = none; last dump note-on, for note-off */
     int dump_portamento_on;     /* separate from the live portamento_on */
+    uint32_t mod_sig;           /* MOD: signature of the modulated values the pattern is derived for (0 = the user's) */
 } acid_seq_t;
 
 typedef struct {
@@ -264,6 +266,21 @@ typedef struct {
      * there. */
     float jitter;              /* 0.0..1.0: per-tick chance of perturbing WHICH
                                * step plays (not WHEN -- kept clear of swing) */
+    /* MOD page: two basic LFOs, each with two matrix slots (destination + attenuator). Modulation is applied
+     * around each 16th step on top of the user's own knob values, which are never changed (see advance_all). */
+    struct {
+        int shape;         /* 0 Sine 1 Tri 2 Saw 3 Square 4 S&H */
+        int rate;          /* 0-100: free rate 0.05..20 Hz, exponential */
+        int sync;          /* 1 = cycle length from the div, locked to the song's 16ths */
+        int div;           /* 0-6: cycle of 4, 8, 16, 32, 64, 128, 256 steps */
+        int dest[2];       /* 0 off, 1-7 A (density accent slide octaves length gate offset), 8-14 B, 15 blend */
+        int amt[2];        /* -100..100 */
+        double phase;      /* free-running cycles */
+        long cyc;          /* current cycle, to pick a new S&H value */
+        float sh;          /* S&H value, -1..1 */
+        float value;       /* last output, -1..1 */
+    } lfo[2];
+    uint32_t lfo_rng;
 } acid_inst_t;
 
 static const host_api_v1_t *g_host = NULL;
@@ -935,7 +952,7 @@ static int song_position(const acid_seq_t *s, long n) {
     }
 }
 
-static int advance_all(acid_inst_t *t, uint8_t out_msgs[][3], int out_lens[], int max_out) {
+static int advance_all_inner(acid_inst_t *t, uint8_t out_msgs[][3], int out_lens[], int max_out) {
     int count = 0;
 
     long k = t->song_step;
@@ -1063,6 +1080,94 @@ static int advance_all(acid_inst_t *t, uint8_t out_msgs[][3], int out_lens[], in
     return count;
 }
 
+static void rederive_pattern(acid_seq_t *s, int scale_idx);
+
+static const int LFO_DIV_STEPS[7] = { 4, 8, 16, 32, 64, 128, 256 };
+
+static float lfo_step(acid_inst_t *t, int n, long step) {
+    __typeof__(t->lfo[0]) *l = &t->lfo[n];
+    double p;
+    long cyc;
+    if (l->sync) {
+        long N = LFO_DIV_STEPS[l->div < 0 ? 0 : l->div > 6 ? 6 : l->div];
+        if (step < 0) step = 0;
+        p = (double)(step % N) / (double)N;
+        cyc = step / N;
+    } else {
+        double hz = 0.05 * pow(400.0, l->rate / 100.0);
+        l->phase += hz * 60.0 / ((t->bpm > 20.0f ? t->bpm : 120.0f) * 4.0);
+        cyc = (long)l->phase;
+        p = l->phase - (double)cyc;
+    }
+    if (cyc != l->cyc) { l->cyc = cyc; l->sh = (float)(rng_next_u32(&t->lfo_rng) >> 8) / (float)(1 << 23) - 1.0f; }
+    float v;
+    switch (l->shape) {
+        case 1:  v = p < 0.5 ? (float)(4 * p - 1) : (float)(3 - 4 * p); break;
+        case 2:  v = (float)(2 * p - 1); break;
+        case 3:  v = p < 0.5 ? 1.0f : -1.0f; break;
+        case 4:  v = l->sh; break;
+        default: v = (float)sin(2 * M_PI * p); break;
+    }
+    l->value = v;
+    return v;
+}
+
+static float clampf_(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+/* MOD: run the LFOs one step, then play the step with each destination's knob value offset by its LFO x attenuator.
+ * The user's values are restored afterwards, so knobs and the saved project never see the modulation; the pattern
+ * itself is re-derived (same seed) whenever a modulated value that shapes it moves. */
+static int advance_all(acid_inst_t *t, uint8_t out_msgs[][3], int out_lens[], int max_out) {
+    int active = 0;
+    for (int n = 0; n < 2; n++) for (int j = 0; j < 2; j++) if (t->lfo[n].dest[j] && t->lfo[n].amt[j]) active = 1;
+    long step = t->song_step >= 0 ? t->song_step : t->swing_pulse_idx;
+    float lv[2] = { lfo_step(t, 0, step), lfo_step(t, 1, step) };
+    if (!active) {
+        for (int q = 0; q < NUM_SEQS; q++)
+            if (t->seq[q].mod_sig) rederive_pattern(&t->seq[q], t->scale);   /* back to the knobs' own pattern */
+        return advance_all_inner(t, out_msgs, out_lens, max_out);
+    }
+    float d[NUM_SEQS][7] = {{0}};
+    float db = 0;
+    for (int n = 0; n < 2; n++)
+        for (int j = 0; j < 2; j++) {
+            int dest = t->lfo[n].dest[j];
+            float x = lv[n] * t->lfo[n].amt[j] / 100.0f;
+            if (dest >= 1 && dest <= 14) d[(dest - 1) / 7][(dest - 1) % 7] += x;
+            else if (dest == 15) db += x;
+        }
+    struct { float density, accent, slide, gate; int oct, len, off; } user[NUM_SEQS];
+    int ublend = t->blend;
+    for (int q = 0; q < NUM_SEQS; q++) {
+        acid_seq_t *s = &t->seq[q];
+        user[q].density = s->density; user[q].accent = s->accent; user[q].slide = s->slide; user[q].gate = s->gate;
+        user[q].oct = s->octave_range; user[q].len = s->length; user[q].off = s->offset;
+        s->density = clampf_(s->density + d[q][0], 0.0f, 1.0f);
+        s->accent = clampf_(s->accent + d[q][1], 0.0f, 1.0f);
+        s->slide = clampf_(s->slide + d[q][2], 0.0f, 1.0f);
+        s->octave_range = (int)lroundf(clampf_(s->octave_range + d[q][3] * 2.0f, 1.0f, 3.0f));
+        s->length = (int)lroundf(clampf_(s->length + d[q][4] * 30.0f, 2.0f, (float)MAX_STEPS));
+        s->gate = clampf_(s->gate + d[q][5], 0.05f, 1.0f);
+        int off = (int)lroundf(s->offset + d[q][6] * 31.0f);
+        s->offset = ((off % s->length) + s->length) % s->length;
+        uint32_t sig = ((uint32_t)lroundf(s->density * 255) << 24) ^ ((uint32_t)lroundf(s->accent * 255) << 16) ^
+                       ((uint32_t)lroundf(s->slide * 255) << 8) ^ ((uint32_t)s->octave_range << 6) ^ (uint32_t)s->length * 2654435761u;
+        sig |= 1;
+        if (sig != s->mod_sig) { rederive_pattern(s, t->scale); s->mod_sig = sig; }
+        if (s->position >= s->length) s->position = s->length - 1;
+    }
+    t->blend = (int)lroundf(clampf_(t->blend + db * 127.0f, -63.0f, 64.0f));
+    int fired = advance_all_inner(t, out_msgs, out_lens, max_out);
+    for (int q = 0; q < NUM_SEQS; q++) {
+        acid_seq_t *s = &t->seq[q];
+        s->density = user[q].density; s->accent = user[q].accent; s->slide = user[q].slide; s->gate = user[q].gate;
+        s->octave_range = user[q].oct; s->length = user[q].len; s->offset = user[q].off;
+        if (s->position >= s->length) s->position = s->length - 1;
+    }
+    t->blend = ublend;
+    return fired;
+}
+
 /* ---------------------------------------------------------------------- */
 /* Plugin API surface                                                     */
 /* ---------------------------------------------------------------------- */
@@ -1104,6 +1209,8 @@ static void *acid_create_instance(const char *module_dir, const char *config_jso
     t->running = 0;
     t->follow_transport = 1;
     t->song_step = -1;
+    t->lfo_rng = 0x2545F491u;
+    for (int n = 0; n < 2; n++) { t->lfo[n].rate = 40; t->lfo[n].div = 2; t->lfo[n].cyc = -1; }
 
     if (g_host && g_host->get_clock_status) {
         if (g_host->get_clock_status() == MOVE_CLOCK_STATUS_RUNNING) t->running = 1;
@@ -1330,6 +1437,7 @@ static void rederive_pattern(acid_seq_t *s, int scale_idx) {
     for (int i = 0; i < MAX_STEPS; i++)
         if (s->locked[i]) { s->steps[i] = ks[i]; s->degrees[i] = kd[i]; s->octaves[i] = ko[i]; }
     s->rng = live;
+    s->mod_sig = 0;
 }
 
 /* Edit-page note cell value: scale steps from the root, negative = below it. */
@@ -1498,6 +1606,18 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
         return;
     }
 
+    if (strncmp(key, "lfo", 3) == 0 && (key[3] == '1' || key[3] == '2') && key[4] == '_') {
+        __typeof__(t->lfo[0]) *l = &t->lfo[key[3] - '1'];
+        const char *m = key + 5;
+        int v = parse_int(val, 0);
+        if (strcmp(m, "shape") == 0) l->shape = v < 0 ? 0 : v > 4 ? 4 : v;
+        else if (strcmp(m, "rate") == 0) l->rate = v < 0 ? 0 : v > 100 ? 100 : v;
+        else if (strcmp(m, "sync") == 0) l->sync = v ? 1 : 0;
+        else if (strcmp(m, "div") == 0) l->div = v < 0 ? 0 : v > 6 ? 6 : v;
+        else if (m[0] == 'd' && (m[1] == '1' || m[1] == '2')) l->dest[m[1] - '1'] = v < 0 ? 0 : v > 15 ? 15 : v;
+        else if (m[0] == 'a' && (m[1] == '1' || m[1] == '2')) l->amt[m[1] - '1'] = v < -100 ? -100 : v > 100 ? 100 : v;
+        return;
+    }
     if (strcmp(key, "root") == 0) {
         int v = parse_int(val, 9) % 12; if (v < 0) v += 12; t->root = v;
     } else if (strcmp(key, "scale") == 0) {
@@ -1567,6 +1687,7 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
         else if (strcmp(k, "offset") == 0) n = snprintf(buf, buf_len, "%d", s->offset);
         else if (strcmp(k, "dir") == 0) n = snprintf(buf, buf_len, "%d", s->dir);
         else if (strcmp(k, "pos") == 0) n = snprintf(buf, buf_len, "%d", s->position);   /* test hook */
+        else if (strcmp(k, "run") == 0) n = snprintf(buf, buf_len, "%d", play_idx(s, s->position) + 1);   /* 1-based pattern step playing now (edit page's running light) */
         else if (strcmp(k, "seed") == 0) n = snprintf(buf, buf_len, "%u", (unsigned)s->seed);
         else if (strcmp(k, "edit_bar") == 0) n = snprintf(buf, buf_len, "%d", s->edit_bar);
         else if (strcmp(k, "locks") == 0) {
@@ -1602,6 +1723,19 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
         return n;
     }
 
+    if (strncmp(key, "lfo", 3) == 0 && (key[3] == '1' || key[3] == '2') && key[4] == '_') {
+        __typeof__(t->lfo[0]) *l = &t->lfo[key[3] - '1'];
+        const char *m = key + 5;
+        int v;
+        if (strcmp(m, "shape") == 0) v = l->shape;
+        else if (strcmp(m, "rate") == 0) v = l->rate;
+        else if (strcmp(m, "sync") == 0) v = l->sync;
+        else if (strcmp(m, "div") == 0) v = l->div;
+        else if (m[0] == 'd' && (m[1] == '1' || m[1] == '2')) v = l->dest[m[1] - '1'];
+        else if (m[0] == 'a' && (m[1] == '1' || m[1] == '2')) v = l->amt[m[1] - '1'];
+        else return -1;
+        return snprintf(buf, buf_len, "%d", v);
+    }
     if (strcmp(key, "root") == 0) n = snprintf(buf, buf_len, "%d", t->root);
     else if (strcmp(key, "scale") == 0) n = snprintf(buf, buf_len, "%d", t->scale);
     else if (strcmp(key, "blend") == 0) n = snprintf(buf, buf_len, "%d", t->blend);

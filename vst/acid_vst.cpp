@@ -183,7 +183,8 @@ static float str_to_norm(const param_t *p, const char *s) {
  * pushed to the host from processReplacing, and left out of the saved chunk. */
 static bool is_edit_param(int i) {
     const char *k = PARAMS[i].key;
-    return (k[0] == 'a' || k[0] == 'b') && k[1] == '_' && ((k[2] == 'e' && k[3] >= '0' && k[3] <= '9') || !std::strcmp(k + 2, "edit_bar"));
+    return (k[0] == 'a' || k[0] == 'b') && k[1] == '_' &&
+           ((k[2] == 'e' && k[3] >= '0' && k[3] <= '9') || !std::strcmp(k + 2, "edit_bar") || !std::strcmp(k + 2, "run"));
 }
 /* Params the engine changes behind the host's back and the host must be told about: the edit cells, the
  * Chain readout, and Blend itself (it snaps to a pass ratio in Chain mode). */
@@ -191,9 +192,26 @@ static bool is_pushed_param(int i) {
     const char *k = PARAMS[i].key;
     return is_edit_param(i) || !std::strcmp(k, "chain_view") || !std::strcmp(k, "blend");
 }
+static bool is_run_param(int i) {
+    const char *k = PARAMS[i].key;
+    return (k[0] == 'a' || k[0] == 'b') && k[1] == '_' && !std::strcmp(k + 2, "run");
+}
 static float get_norm(Plugin *w, int i) {
     char buf[64];
     int n;
+    if (is_run_param(i)) {   /* the edit page's running light: 1..16 = the playing step's column in the bar shown, 0 = none */
+        int run = 0, bar = 0;
+        char key[16], b2[16];
+        if (w->was_playing) {
+            std::lock_guard<std::mutex> lk(w->lock);
+            std::snprintf(key, sizeof key, "%c_run", PARAMS[i].key[0]);
+            if (g_api->get_param(w->inst, key, b2, sizeof b2) > 0) run = std::atoi(b2);
+            std::snprintf(key, sizeof key, "%c_edit_bar", PARAMS[i].key[0]);
+            if (g_api->get_param(w->inst, key, b2, sizeof b2) > 0) bar = std::atoi(b2);
+        }
+        int col = run > 0 && (run - 1) / 16 == bar ? (run - 1) % 16 + 1 : 0;
+        return str_to_norm(&PARAMS[i], std::to_string(col).c_str());
+    }
     if (popup_is(i)) return w->open[i];
     if (PARAMS[i].momentary) return 0.0f;   /* triggers always read released, or the host echoes the press back */
     { std::lock_guard<std::mutex> lk(w->lock); n = g_api->get_param(w->inst, PARAMS[i].key, buf, sizeof buf); }
@@ -404,8 +422,13 @@ static void processReplacing(AEffect *e, float **in, float **out, int32_t n) {
         if (w->release[i]) { w->release[i] = 0; w->held[i] = false; w->master(&w->fx, audioMasterAutomate, i, 0, 0, 0.0f); }
     if ((++w->edit_scan & 3) == 0) {   /* every 4th block: tell the host which edit cells changed (bounded per pass) */
         int budget = 24;
+        for (int i = 0; i < NPARAMS; i++) {   /* the running lights first: they move every step and must not queue behind the cells */
+            if (!is_run_param(i)) continue;
+            float v = get_norm(w, i);
+            if (v != w->told[i]) { w->told[i] = v; w->master(&w->fx, audioMasterAutomate, i, 0, 0, v); }
+        }
         for (int i = 0; i < NPARAMS && budget > 0; i++) {
-            if (!is_pushed_param(i)) continue;
+            if (!is_pushed_param(i) || is_run_param(i)) continue;
             float v = get_norm(w, i);
             if (v != w->told[i]) { w->told[i] = v; w->master(&w->fx, audioMasterAutomate, i, 0, 0, v); budget--; }
         }

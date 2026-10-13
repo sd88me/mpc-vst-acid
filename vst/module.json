@@ -201,6 +201,24 @@
     { "key": "b_e15_note", "name": "Step 16", "min": -7, "max": 21 },
     { "key": "b_e15_acc", "name": "Acc 16", "options": ["OFF", "ON"] },
     { "key": "b_e15_sld", "name": "Sld 16", "options": ["OFF", "ON"] },
-    { "key": "b_e15_lock", "name": "Lock 16", "options": ["OFF", "ON"] }
+    { "key": "b_e15_lock", "name": "Lock 16", "options": ["OFF", "ON"] },
+    { "key": "a_run", "name": "Run A", "options": ["-","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"] },
+    { "key": "b_run", "name": "Run B", "options": ["-","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"] },
+    { "key": "lfo1_shape", "name": "LFO1 Shape", "options": ["SINE","TRI","SAW","SQR","S&H"] },
+    { "key": "lfo1_rate", "name": "LFO1 Rate", "min": 0, "max": 100 },
+    { "key": "lfo1_sync", "name": "LFO1 Sync", "options": ["OFF","ON"] },
+    { "key": "lfo1_div", "name": "LFO1 Div", "options": ["1/4","1/2","1 BAR","2 BARS","4 BARS","8 BARS","16 BARS"] },
+    { "key": "lfo1_d1", "name": "LFO1 Dest 1", "options": ["OFF","A DENSITY","A ACCENT","A SLIDE","A OCTAVES","A LENGTH","A GATE","A OFFSET","B DENSITY","B ACCENT","B SLIDE","B OCTAVES","B LENGTH","B GATE","B OFFSET","BLEND"] },
+    { "key": "lfo1_a1", "name": "LFO1 Amt 1", "min": -100, "max": 100 },
+    { "key": "lfo1_d2", "name": "LFO1 Dest 2", "options": ["OFF","A DENSITY","A ACCENT","A SLIDE","A OCTAVES","A LENGTH","A GATE","A OFFSET","B DENSITY","B ACCENT","B SLIDE","B OCTAVES","B LENGTH","B GATE","B OFFSET","BLEND"] },
+    { "key": "lfo1_a2", "name": "LFO1 Amt 2", "min": -100, "max": 100 },
+    { "key": "lfo2_shape", "name": "LFO2 Shape", "options": ["SINE","TRI","SAW","SQR","S&H"] },
+    { "key": "lfo2_rate", "name": "LFO2 Rate", "min": 0, "max": 100 },
+    { "key": "lfo2_sync", "name": "LFO2 Sync", "options": ["OFF","ON"] },
+    { "key": "lfo2_div", "name": "LFO2 Div", "options": ["1/4","1/2","1 BAR","2 BARS","4 BARS","8 BARS","16 BARS"] },
+    { "key": "lfo2_d1", "name": "LFO2 Dest 1", "options": ["OFF","A DENSITY","A ACCENT","A SLIDE","A OCTAVES","A LENGTH","A GATE","A OFFSET","B DENSITY","B ACCENT","B SLIDE","B OCTAVES","B LENGTH","B GATE","B OFFSET","BLEND"] },
+    { "key": "lfo2_a1", "name": "LFO2 Amt 1", "min": -100, "max": 100 },
+    { "key": "lfo2_d2", "name": "LFO2 Dest 2", "options": ["OFF","A DENSITY","A ACCENT","A SLIDE","A OCTAVES","A LENGTH","A GATE","A OFFSET","B DENSITY","B ACCENT","B SLIDE","B OCTAVES","B LENGTH","B GATE","B OFFSET","BLEND"] },
+    { "key": "lfo2_a2", "name": "LFO2 Amt 2", "min": -100, "max": 100 }
   ]
 }

@@ -188,6 +188,34 @@ int main(void) {
         g->d(g, 1, 0, 0, 0, 0);
     }
 
+    /* MOD: a square LFO on A's density moves the pattern but never the knob, and its settings are saved */
+    {
+        int ix[8]; const char *ks[8] = {"a_density", "lfo1_shape", "lfo1_sync", "lfo1_div", "lfo1_d1", "lfo1_a1", "a_e0_gate", "a_run"};
+        for (int j = 0; j < 8; j++) { ix[j] = -1; for (int i = 0; i < NPARAMS; i++) if (!strcmp(PARAMS[i].key, ks[j])) ix[j] = i; if (ix[j] < 0) { printf("FAIL no param %s\n", ks[j]); fails++; } }
+        if (fails == 0 || ix[0] >= 0) {
+            float out2[2][128]; float *o2[2] = { out2[0], out2[1] };
+            a->setP(a, ix[0], 0.5f);
+            a->setP(a, ix[1], 3.0f / 4.0f);    /* SQR */
+            a->setP(a, ix[2], 1.0f);           /* sync on */
+            a->setP(a, ix[3], 0.0f);           /* 1/4 note = 4 steps */
+            a->setP(a, ix[4], 1.0f / 15.0f);   /* A DENSITY */
+            a->setP(a, ix[5], 1.0f);           /* +100 */
+            double qq = 0.0;
+            g_ti.flags = 0; a->pr(a, 0, o2, 128);
+            g_ti.flags = kPlaying | kPpq | kTempo; g_ti.ppqPos = 0.0; g_ti.tempo = 126.0; g_ti.sampleRate = 44100.0;
+            int on_lo = 0, on_hi = 0;
+            for (int k = 0; k < 400; k++) {
+                qq += 128.0 * 126.0 / 60.0 / 44100.0; g_ti.ppqPos = qq; a->pr(a, 0, o2, 128);
+                double fr = qq * 4.0 - floor(qq * 4.0); long sx = (long)floor(qq * 4.0);
+                if (sx >= 4 && fr > 0.3 && fr < 0.9) { int on = 0; for (int c = 0; c < 16; c++) { int ci = -1; char nm[16]; snprintf(nm, sizeof nm, "a_e%d_gate", c); for (int i = 0; i < NPARAMS; i++) if (!strcmp(PARAMS[i].key, nm)) ci = i; if (ci >= 0 && a->getP(a, ci) > 0.5f) on++; } if ((sx / 2) % 2) on_hi += on; else on_lo += on; }
+            }
+            printf("mod: knob %.3f (expect 0.500), steps on in the two LFO halves: %d / %d\n", a->getP(a, ix[0]), on_lo, on_hi);
+            if (fabsf(a->getP(a, ix[0]) - 0.5f) > 0.001f) { printf("FAIL modulation moved the knob\n"); fails++; }
+            if (on_lo == on_hi) { printf("FAIL LFO did not change the pattern\n"); fails++; }
+            g_ti.flags = 0; a->pr(a, 0, o2, 128);
+        }
+    }
+
     /* chunk round-trip */
     void *chunk = 0;
     intptr_t n = a->d(a, 23, 0, 0, &chunk, 0);
