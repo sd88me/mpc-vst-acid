@@ -20,7 +20,7 @@ skin built and previewed with `tools/studio.py preview` in the `mpc-vst-html-art
    mutating a step locks it. Generate, `seed`, Regen clear locks. Saved as `a_locks` / `b_locks`
    (`idx.kind.deg.oct,` per locked step) after the seed in the chunk (chunk buffer 2 KB -> 8 KB).
 4. **Edit pages** (tabs SEQ A EDIT / SEQ B EDIT, `vst/layout.conf`). 16 steps shown, `a_edit_bar` switches 1-16 / 17-32.
-   Per step: `e<n>_gate` (ON/rest; a rest keeps its note), `e<n>_note` (signed scale steps from the root, -7..+21, slider;
+   Per step: `e<n>_gate` (ON/rest; a rest keeps its note), `e<n>_note` (signed scale steps from the root, -14..+14, slider (a symmetric two-octave span around the root);
    -1 octave below root up to OCTAVES above; `octaves[]` is now `int8_t`), `e<n>_acc`, `e<n>_sld`, `e<n>_lock`.
    Edit-cell params are derived state: pushed to the host from `processReplacing` (every 4th block, 24 per pass,
    `is_edit_param()` / `is_pushed_param()` in `vst/acid_vst.cpp`) and left out of the saved chunk.
@@ -65,6 +65,6 @@ No legacy path was written; add one if that matters for the release.
 
 ## Regenerating the strip
 
-`vst/images/note_strip.png`: 29 frames stacked down, each 52x270, value -7 at the top frame, zero at frame 7 (root line),
+`vst/images/note_strip.png`: 29 frames stacked down, each 52x270, value -14 at the bottom frame, zero at frame 14 (root line),
 bar from the root line to the thumb. If the slider range or size changes, change `frames=` and `w=` / `h=` in the
 `slider_v` lines of `vst/layout.conf` to match and redraw it with `vst/make_note_strip.py` (the run command is in its header).

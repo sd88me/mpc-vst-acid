@@ -1457,9 +1457,8 @@ static int edit_cell_set(acid_seq_t *s, int scale_idx, int cell, const char *fie
     if (strcmp(field, "gate") == 0) {
         s->steps[i] = v ? (s->steps[i] == STEP_REST ? STEP_NOTE : s->steps[i]) : STEP_REST;
     } else if (strcmp(field, "note") == 0) {
-        int top = sc->len * s->octave_range - 1;
-        if (v < -sc->len) v = -sc->len;
-        if (v > top) v = top;
+        if (v < -14) v = -14;   /* the slider is symmetric: two scale octaves (7 steps each) either side of the root */
+        if (v > 14) v = 14;
         int deg = ((v % sc->len) + sc->len) % sc->len;
         s->degrees[i] = (uint8_t)deg;
         s->octaves[i] = (int8_t)((v - deg) / sc->len);

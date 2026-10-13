@@ -1,8 +1,8 @@
 # Draws vst/images/note_strip.png. Run in the mpc-vst-html-art image (it has PIL):
 #   docker run --rm -u $(id -u):$(id -g) -e HOME=/tmp -v "$PWD/vst":/s:ro -v "$PWD/vst/images":/o mpc-vst-html-art python3 /s/make_note_strip.py
-# 29-frame bipolar slider filmstrip for the edit page's NOTE sliders: values -7..+21, zero at frame 7.
+# 29-frame bipolar slider filmstrip for the edit page's NOTE sliders: values -14..+14, zero at frame 14.
 from PIL import Image, ImageDraw
-W, H, N, ZERO, S = 52, 270, 29, 7, 4
+W, H, N, ZERO, S = 52, 270, 29, 14, 4
 PAD, TR = 22, 18
 def y_of(k): return PAD + (H - 2 * PAD) * (1 - k / (N - 1))
 strip = Image.new("RGBA", (W, H * N), (0, 0, 0, 0))
