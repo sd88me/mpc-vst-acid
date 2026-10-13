@@ -213,6 +213,32 @@ int main(void) {
         a->setP(a, ix[1], 0.0f); a->setP(a, ix[0], 0.5f);
     }
 
+    /* Accent / slide: the share of steps accented / slid follows the knob on both algos */
+    {
+        const char *want[7] = {"a_accent", "a_slide", "a_algo", "a_generate", "a_density", "a_octaves", "a_e0_gate"};
+        int ix[7]; for (int j = 0; j < 7; j++) { ix[j] = -1; for (int i = 0; i < NPARAMS; i++) if (!strcmp(PARAMS[i].key, want[j])) ix[j] = i; }
+        float out4[2][128]; float *o4[2] = { out4[0], out4[1] };
+        for (int algo = 0; algo < 2; algo++)
+            for (int knob = 0; knob < 2; knob++)
+                for (int d = 0; d <= 4; d++) {
+                    float v = d * 0.25f; double on = 0, acc = 0, sld = 0;
+                    a->setP(a, ix[2], algo ? 1.0f : 0.0f); a->setP(a, ix[4], 0.8f);
+                    a->setP(a, ix[0], knob == 0 ? v : 0.4f); a->setP(a, ix[1], knob == 1 ? v : 0.25f); a->setP(a, ix[5], 0.5f);
+                    for (int g = 0; g < 60; g++) {
+                        a->setP(a, ix[3], 1.0f); a->pr(a, 0, o4, 128); a->setP(a, ix[3], 0.0f); a->pr(a, 0, o4, 128);
+                        for (int c = 0; c < 16; c++) {
+                            if (a->getP(a, ix[6] + c * 5) < 0.5f) continue;
+                            on++; acc += a->getP(a, ix[6] + c * 5 + 2) > 0.5f; sld += a->getP(a, ix[6] + c * 5 + 3) > 0.5f;
+                        }
+                    }
+                    printf("knobs: algo %s %s %.2f -> accented %.0f%% slid %.0f%%\n", algo ? "16" : "1",
+                           knob == 0 ? "accent" : "slide ", v, 100 * acc / on, 100 * sld / on);
+                    if (knob == 0 && fabs(acc / on - v) > 0.12) { printf("FAIL accent not following the knob\n"); fails++; }
+                    if (knob == 1 && v <= 0.5f && fabs(sld / on - v) > 0.12) { printf("FAIL slide not following the knob\n"); fails++; }
+                }
+        a->setP(a, ix[2], 0.0f); a->setP(a, ix[0], 0.5f); a->setP(a, ix[1], 0.25f); a->setP(a, ix[5], 0.5f); a->setP(a, ix[4], 0.5f);
+    }
+
     /* MOD: a square LFO on A's density moves the pattern but never the knob, and its settings are saved */
     {
         int ix[8]; const char *ks[8] = {"a_density", "lfo1_shape", "lfo1_sync", "lfo1_div", "lfo1_d1", "lfo1_a1", "a_e0_gate", "a_run"};
