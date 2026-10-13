@@ -11,7 +11,7 @@ A TB-303-style acid bassline sequencer for the Akai MPC OS built-in plugin host.
 bass lines, lets you blend between them, and plays them over MIDI into a synth track. Acid makes
 no sound itself. It is a native VST2 plugin with a touchscreen skin and Q-Link control.
 
-<img width="640" height="400" alt="2026-09-29T124456312Z" src="https://github.com/user-attachments/assets/a9bac6d3-8b13-4715-95be-18ebab731cce" />
+<img width="640" alt="Acid SEQ A" src="docs/img/seq-a.png" />
 
 **Version 2.0.0** · GPL-3.0-only · by sd88me
 
@@ -23,7 +23,6 @@ no sound itself. It is a native VST2 plugin with a touchscreen skin and Q-Link c
 
 The screen has six tabs: SEQ A, EDIT A, SEQ B, EDIT B, MOD and GLOBAL. The Q-Links follow the tab you are on.
 
-![SEQ A](docs/img/seq-a.png)
 ![EDIT A](docs/img/edit-a.png)
 
 ### SEQ A and SEQ B
