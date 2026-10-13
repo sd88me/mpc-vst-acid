@@ -1,6 +1,6 @@
-# v2 work in progress: live knobs, edit pages, Chain snap
+# 2.0 work: live knobs, edit pages, running light, MOD tab
 
-Branch: `v2-live-knobs-edit-page` (off master at fe1fd5a, i.e. after PR #15 clock-lookahead).
+Branch: `acid-2.0` (off master at fe1fd5a, i.e. after PR #15 clock-lookahead).
 **Nothing here has been run on the Force.** The 1.0.7 look-ahead timing fix from PR #15 is also still waiting for its
 listen check, so test and release that first; keep this branch out of that release.
 

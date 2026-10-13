@@ -13,7 +13,7 @@ no sound itself. It is a native VST2 plugin with a touchscreen skin and Q-Link c
 
 <img width="640" height="400" alt="2026-09-29T124456312Z" src="https://github.com/user-attachments/assets/a9bac6d3-8b13-4715-95be-18ebab731cce" />
 
-**Version 1.0.0** · GPL-3.0-only · by sd88me
+**Version 2.0.0** · GPL-3.0-only · by sd88me
 
 ## Use it
 1. Add **Acid** to an instrument track from the plugin browser.
@@ -94,8 +94,8 @@ Settings are saved with your project.
 ## Install
 1. Download `Acid-<version>-mpc-armv7.zip` from the
    [Releases page](https://github.com/sd88me/mpc-vst-acid/releases) and unzip it.
-2. Copy the folder to the device: `scp -r Acid-1.0.0 root@<device-ip>:/tmp/`
-3. Run the installer: `ssh root@<device-ip> sh /tmp/Acid-1.0.0/install.sh`
+2. Copy the folder to the device: `scp -r Acid-2.0.0 root@<device-ip>:/tmp/`
+3. Run the installer: `ssh root@<device-ip> sh /tmp/Acid-2.0.0/install.sh`
 
 The installer **stops MPC** (save your project first), copies the plugin and skin, backs up
 `MPC.settings`, registers the plugin and restarts MPC. Run it again to upgrade in place. Add `-y` to skip
