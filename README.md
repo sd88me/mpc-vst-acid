@@ -129,9 +129,6 @@ Acid is the MPC counterpart of the Force Shadow addon in `sd88me/force-acid` and
 ## Credits
 - **Pattern model:** the density / accent / slide / octave generator (ALGO 1) is a port of the TB-3PO model, via `schwung-tb3po` and the Phazerville TB_3PO applet.
 - **Second generator:** ALGO values above 1 blend in a generator inspired by the Sting.amxd Max for Live device (non-repeating pitch draw, a random walk that clusters notes and rests, and the "VelPyra" accent shape).
-- **Engine lineage:** Acid started as `schwung-acid` for Ableton Move (Schwung), was ported to the Force Shadow addon (`sd88me/force-acid`) and then to this native plugin. The 2.0 additions (live knobs, edit pages, the MOD tab, density fixes, song-locked timing) were written for this plugin.
-- **Skin:** panel text is set in Univers 53 Extended, to match `mpc-jv880`, and the wordmark in Earth Normal. The smiley is the classic acid-house one. The skin is built with the browser skin tools from `sd88me/mpc-vst-plugins`.
-- **Plugin host and tooling:** `sd88me/mpc-vst-plugins` provides the MPC plugin wrapper, skin builder, packaging and installer.
 
 ## License
 GPL-3.0-only. See `LICENSE`.
