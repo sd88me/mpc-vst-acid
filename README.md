@@ -21,11 +21,14 @@ no sound itself. It is a native VST2 plugin with a touchscreen skin and Q-Link c
    to hear it, set the MIDI input to that port and set **MIDI CH** to the channel that track listens on.
 3. Press **GENERATE** on SEQ A, and on SEQ B if you want a second line, then start the transport.
 
-The screen has three pages, and the Q-Links follow the page you are on.
+The screen has six tabs: SEQ A, EDIT A, SEQ B, EDIT B, MOD and GLOBAL. The Q-Links follow the tab you are on.
+
+![SEQ A](docs/img/seq-a.png)
+![EDIT A](docs/img/edit-a.png)
 
 ### SEQ A and SEQ B
 Each line is an independent sequencer of 2 to 32 steps. Both follow the MPC transport: every 16th is placed from the song position, so starting mid-song, looping or locating keeps Acid on the grid. The controls are the same
-on both pages.
+on both pages. Q-Links 1-8 turn the eight knobs in the order they appear (the grid left to right, top row then bottom), then GENERATE, MUTATE, BLEND, MIDI CH, REGEN and DIR.
 
 | Control | What it does |
 |---|---|
@@ -35,7 +38,7 @@ on both pages.
 | ACCENT | Chance that a note is accented (louder) |
 | SLIDE | Chance that a note slides into the next step, 303-style. A slide into a rest becomes a plain note |
 | OCTAVES | How many octaves above the root the pitches can span, 1 to 3 |
-| ALGO | 1 is the classic density/accent/slide model. Higher values blend in a second generator (non-repeating pitches, random-walk density, pyramid accents), up to 16 |
+| ALGO | 1 is the classic density/accent/slide model. Higher values blend in a second generator (non-repeating pitches, clustered runs of notes and rests, pyramid accents), up to 16 |
 | LENGTH | Steps before the pattern loops, 2 to 32. It takes effect at once. GENERATE to fill a longer pattern with new steps |
 | GATE | Note length as a fraction of a step. It is live, and held slides ignore it |
 | OFFSET (A) / TUNE OFFSET (B) | OFFSET rotates which step plays without rewriting the pattern. TUNE OFFSET sets B's interval relative to A, ±24 semitones (+7 is a fifth above, -12 an octave below) |
@@ -46,15 +49,21 @@ on both pages.
 
 DENSITY, ACCENT, SLIDE, OCTAVES, ALGO, LENGTH and SCALE reshape the playing pattern live from the current seed, so you can sweep them without losing its character. Returning a knob to the same value gives back the same pattern. Only GENERATE picks a new seed. Patterns saved with 1.0.x will sound different, because the same seed now maps to a different pattern.
 
-### SEQ A EDIT and SEQ B EDIT
-Each line has an edit page with 16 steps at a time. The STEPS 1-16 / STEPS 17-32 switch picks which bar of a longer pattern you see. Per step:
+### EDIT A and EDIT B
+Each line has an edit page, next to its SEQ page, with 16 steps at a time. A yellow marker above the step numbers follows the playing step (on the bar you are viewing). The 16 Q-Links turn the 16 NOTE sliders. The STEPS 1-16 / STEPS 17-32 switch picks which bar of a longer pattern you see. Per step:
 
 - **ON** switches the step between a note and a rest. A rest keeps its note, so switching it on brings the note back.
-- **NOTE** is a vertical slider in scale steps from the root. 0 is the root, negative goes up to one octave below it, and the top is as high as OCTAVES allows.
+- **NOTE** is a vertical slider in scale steps from the root. 0 is the root, in the middle, and the slider reaches two scale octaves (14 steps) above and below it.
 - **ACC** and **SLIDE** are independent, so a step can be both, as on a 303. GENERATE rolls them independently too.
 - **LOCK** marks a step as hand-edited. A locked step keeps its note, accent and slide when DENSITY, ACCENT, SLIDE, OCTAVES, ALGO, LENGTH or SCALE reshape the pattern. Editing a step locks it. Tap LOCK to hand it back to the knobs.
 
 Locks are saved with the project and cleared by GENERATE and REGEN.
+
+### MOD
+Two LFOs, each with two modulation slots. Per LFO: SHAPE (sine, triangle, saw, square or sample and hold), RATE (0.05 to 20 Hz) or, with SYNC on, a cycle of 1/4 note up to 16 bars locked to the song position. Each slot has a destination and an AMOUNT from -100 to +100. Destinations are DENSITY, ACCENT, SLIDE, OCTAVES, LENGTH, GATE and OFFSET on either line, plus BLEND.
+Your knob values are never changed, so the knobs and the saved project show your own settings. The pattern follows the modulation, so the edit pages move while an LFO is on density, accent, slide, octaves or length. Q-Links 1-8 are LFO 1 and 9-16 are LFO 2.
+
+![MOD](docs/img/mod.png)
 
 ### GLOBAL
 | Control | What it does |
