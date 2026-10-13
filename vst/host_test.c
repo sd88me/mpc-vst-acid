@@ -188,6 +188,31 @@ int main(void) {
         g->d(g, 1, 0, 0, 0, 0);
     }
 
+    /* Density: the share of steps that play follows the knob evenly, on the mostly-secondary algo too */
+    {
+        const char *want[3] = {"a_density", "a_algo", "a_generate"};
+        int ix[3] = {-1, -1, -1}, gate0 = -1;
+        for (int i = 0; i < NPARAMS; i++) { for (int j = 0; j < 3; j++) if (!strcmp(PARAMS[i].key, want[j])) ix[j] = i; if (!strcmp(PARAMS[i].key, "a_e0_gate")) gate0 = i; }
+        float out3[2][128]; float *o3[2] = { out3[0], out3[1] };
+        double prev = -1;
+        for (int algo = 0; algo < 2; algo++)
+            for (int d = 1; d <= 3; d++) {
+                float dens = d * 0.25f; int total = 0;
+                a->setP(a, ix[1], algo ? 1.0f : 0.0f);
+                a->setP(a, ix[0], dens);
+                for (int g = 0; g < 60; g++) {
+                    a->setP(a, ix[2], 1.0f); a->pr(a, 0, o3, 128); a->setP(a, ix[2], 0.0f); a->pr(a, 0, o3, 128);
+                    for (int c = 0; c < 16; c++) if (a->getP(a, gate0 + c * 5) > 0.5f) total++;
+                }
+                double mean = total / 60.0;
+                printf("density: algo %s, knob %.2f -> %.1f of 16 steps play\n", algo ? "16" : "1", dens, mean);
+                if (fabs(mean - dens * 16) > 3.0) { printf("FAIL density not following the knob\n"); fails++; }
+                prev = mean;
+            }
+        (void)prev;
+        a->setP(a, ix[1], 0.0f); a->setP(a, ix[0], 0.5f);
+    }
+
     /* MOD: a square LFO on A's density moves the pattern but never the knob, and its settings are saved */
     {
         int ix[8]; const char *ks[8] = {"a_density", "lfo1_shape", "lfo1_sync", "lfo1_div", "lfo1_d1", "lfo1_a1", "a_e0_gate", "a_run"};

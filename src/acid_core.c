@@ -365,12 +365,12 @@ static void gen_secondary(const acid_seq_t *s, uint32_t *rng, int scale_idx,
     int bag_n = sc->len;
     for (int k = 0; k < bag_n; k++) bag[k] = (uint8_t)k;
 
-    /* "CakeWalk": a bounded random walk drives gate/rest density instead of
-     * an independent per-step coin flip. Density knob sets where the walk
-     * starts (and roughly where it idles). */
-    int walk = (int)(s->density * 8.0f);
-    if (walk < 0) walk = 0;
-    if (walk > 8) walk = 8;
+    /* "CakeWalk": a bounded random walk clusters the gate/rest decisions into runs instead of an
+     * independent coin flip per step. The walk itself no longer depends on Density (it starts mid-range),
+     * and only leans the per-step chance up or down around the Density knob, so the fraction of steps
+     * that play follows the knob evenly: 0 = none, 1 = all. (It used to start at density*8 and rest only
+     * below 2, which left almost every step playing from about a quarter of the way up.) */
+    int walk = 4;
 
     /* "VelPyra": mark the first N pyramid slots (N set by the Accent knob)
      * as accented, instead of rolling accent independently per step. */
@@ -387,7 +387,7 @@ static void gen_secondary(const acid_seq_t *s, uint32_t *rng, int scale_idx,
      * step (rest or not) so the degree sequence doesn't shift with density. */
     for (int i = 0; i < s->length; i++) {
         int step_delta = (int)(rng_next_f(rng) * 3.0f) - 1; /* -1, 0, +1 */
-        float r_bag = rng_next_f(rng), r_oct = rng_next_f(rng), r_sld = rng_next_f(rng);
+        float r_bag = rng_next_f(rng), r_oct = rng_next_f(rng), r_sld = rng_next_f(rng), r_gate = rng_next_f(rng);
 
         if (bag_n == 0) {
             bag_n = sc->len;
@@ -406,7 +406,9 @@ static void gen_secondary(const acid_seq_t *s, uint32_t *rng, int scale_idx,
         if (oct >= s->octave_range) oct = s->octave_range - 1;
         out_deg[i] = (uint8_t)degree;
         out_oct[i] = (uint8_t)oct;
-        if (walk < 2) {
+        float lean = (float)(walk - 4) / 4.0f;                       /* -1..1 */
+        float chance = s->density + 0.9f * s->density * (1.0f - s->density) * lean;
+        if (r_gate >= chance) {
             out_steps[i] = STEP_REST;
             continue;
         }
