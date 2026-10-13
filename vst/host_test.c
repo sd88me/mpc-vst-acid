@@ -188,6 +188,85 @@ int main(void) {
         g->d(g, 1, 0, 0, 0, 0);
     }
 
+    /* Density: the share of steps that play follows the knob evenly, on the mostly-secondary algo too */
+    {
+        const char *want[3] = {"a_density", "a_algo", "a_generate"};
+        int ix[3] = {-1, -1, -1}, gate0 = -1;
+        for (int i = 0; i < NPARAMS; i++) { for (int j = 0; j < 3; j++) if (!strcmp(PARAMS[i].key, want[j])) ix[j] = i; if (!strcmp(PARAMS[i].key, "a_e0_gate")) gate0 = i; }
+        float out3[2][128]; float *o3[2] = { out3[0], out3[1] };
+        double prev = -1;
+        for (int algo = 0; algo < 2; algo++)
+            for (int d = 1; d <= 3; d++) {
+                float dens = d * 0.25f; int total = 0;
+                a->setP(a, ix[1], algo ? 1.0f : 0.0f);
+                a->setP(a, ix[0], dens);
+                for (int g = 0; g < 60; g++) {
+                    a->setP(a, ix[2], 1.0f); a->pr(a, 0, o3, 128); a->setP(a, ix[2], 0.0f); a->pr(a, 0, o3, 128);
+                    for (int c = 0; c < 16; c++) if (a->getP(a, gate0 + c * 5) > 0.5f) total++;
+                }
+                double mean = total / 60.0;
+                printf("density: algo %s, knob %.2f -> %.1f of 16 steps play\n", algo ? "16" : "1", dens, mean);
+                if (fabs(mean - dens * 16) > 3.0) { printf("FAIL density not following the knob\n"); fails++; }
+                prev = mean;
+            }
+        (void)prev;
+        a->setP(a, ix[1], 0.0f); a->setP(a, ix[0], 0.5f);
+    }
+
+    /* Accent / slide: the share of steps accented / slid follows the knob on both algos */
+    {
+        const char *want[7] = {"a_accent", "a_slide", "a_algo", "a_generate", "a_density", "a_octaves", "a_e0_gate"};
+        int ix[7]; for (int j = 0; j < 7; j++) { ix[j] = -1; for (int i = 0; i < NPARAMS; i++) if (!strcmp(PARAMS[i].key, want[j])) ix[j] = i; }
+        float out4[2][128]; float *o4[2] = { out4[0], out4[1] };
+        for (int algo = 0; algo < 2; algo++)
+            for (int knob = 0; knob < 2; knob++)
+                for (int d = 0; d <= 4; d++) {
+                    float v = d * 0.25f; double on = 0, acc = 0, sld = 0;
+                    a->setP(a, ix[2], algo ? 1.0f : 0.0f); a->setP(a, ix[4], 0.8f);
+                    a->setP(a, ix[0], knob == 0 ? v : 0.4f); a->setP(a, ix[1], knob == 1 ? v : 0.25f); a->setP(a, ix[5], 0.5f);
+                    for (int g = 0; g < 60; g++) {
+                        a->setP(a, ix[3], 1.0f); a->pr(a, 0, o4, 128); a->setP(a, ix[3], 0.0f); a->pr(a, 0, o4, 128);
+                        for (int c = 0; c < 16; c++) {
+                            if (a->getP(a, ix[6] + c * 5) < 0.5f) continue;
+                            on++; acc += a->getP(a, ix[6] + c * 5 + 2) > 0.5f; sld += a->getP(a, ix[6] + c * 5 + 3) > 0.5f;
+                        }
+                    }
+                    printf("knobs: algo %s %s %.2f -> accented %.0f%% slid %.0f%%\n", algo ? "16" : "1",
+                           knob == 0 ? "accent" : "slide ", v, 100 * acc / on, 100 * sld / on);
+                    if (knob == 0 && fabs(acc / on - v) > 0.12) { printf("FAIL accent not following the knob\n"); fails++; }
+                    if (knob == 1 && v <= 0.5f && fabs(sld / on - v) > 0.12) { printf("FAIL slide not following the knob\n"); fails++; }
+                }
+        a->setP(a, ix[2], 0.0f); a->setP(a, ix[0], 0.5f); a->setP(a, ix[1], 0.25f); a->setP(a, ix[5], 0.5f); a->setP(a, ix[4], 0.5f);
+    }
+
+    /* MOD: a square LFO on A's density moves the pattern but never the knob, and its settings are saved */
+    {
+        int ix[8]; const char *ks[8] = {"a_density", "lfo1_shape", "lfo1_sync", "lfo1_div", "lfo1_d1", "lfo1_a1", "a_e0_gate", "a_run"};
+        for (int j = 0; j < 8; j++) { ix[j] = -1; for (int i = 0; i < NPARAMS; i++) if (!strcmp(PARAMS[i].key, ks[j])) ix[j] = i; if (ix[j] < 0) { printf("FAIL no param %s\n", ks[j]); fails++; } }
+        if (fails == 0 || ix[0] >= 0) {
+            float out2[2][128]; float *o2[2] = { out2[0], out2[1] };
+            a->setP(a, ix[0], 0.5f);
+            a->setP(a, ix[1], 3.0f / 4.0f);    /* SQR */
+            a->setP(a, ix[2], 1.0f);           /* sync on */
+            a->setP(a, ix[3], 0.0f);           /* 1/4 note = 4 steps */
+            a->setP(a, ix[4], 1.0f / 15.0f);   /* A DENSITY */
+            a->setP(a, ix[5], 1.0f);           /* +100 */
+            double qq = 0.0;
+            g_ti.flags = 0; a->pr(a, 0, o2, 128);
+            g_ti.flags = kPlaying | kPpq | kTempo; g_ti.ppqPos = 0.0; g_ti.tempo = 126.0; g_ti.sampleRate = 44100.0;
+            int on_lo = 0, on_hi = 0;
+            for (int k = 0; k < 400; k++) {
+                qq += 128.0 * 126.0 / 60.0 / 44100.0; g_ti.ppqPos = qq; a->pr(a, 0, o2, 128);
+                double fr = qq * 4.0 - floor(qq * 4.0); long sx = (long)floor(qq * 4.0);
+                if (sx >= 4 && fr > 0.3 && fr < 0.9) { int on = 0; for (int c = 0; c < 16; c++) { int ci = -1; char nm[16]; snprintf(nm, sizeof nm, "a_e%d_gate", c); for (int i = 0; i < NPARAMS; i++) if (!strcmp(PARAMS[i].key, nm)) ci = i; if (ci >= 0 && a->getP(a, ci) > 0.5f) on++; } if ((sx / 2) % 2) on_hi += on; else on_lo += on; }
+            }
+            printf("mod: knob %.3f (expect 0.500), steps on in the two LFO halves: %d / %d\n", a->getP(a, ix[0]), on_lo, on_hi);
+            if (fabsf(a->getP(a, ix[0]) - 0.5f) > 0.001f) { printf("FAIL modulation moved the knob\n"); fails++; }
+            if (on_lo == on_hi) { printf("FAIL LFO did not change the pattern\n"); fails++; }
+            g_ti.flags = 0; a->pr(a, 0, o2, 128);
+        }
+    }
+
     /* chunk round-trip */
     void *chunk = 0;
     intptr_t n = a->d(a, 23, 0, 0, &chunk, 0);

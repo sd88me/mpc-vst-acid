@@ -1,0 +1,88 @@
+# Acid MPC skin layout: redone on the browser renderer (docs/SKIN_STUDIO.md, "art": "html" in
+# vst.json) so real fonts and a CSS stylesheet (skin.css) can be used, matching mpc-jv880's own
+# font choice (Univers 53 Extended for all baked panel text) instead of shadow_art's bitmap font.
+# Each SEQ tab combines the old SEQUENCER + ADVANCED frames into one: GENERATE/MUTATE up top over
+# a 4x2 knob grid (density/accent/slide/octaves, then algo/length/gate/offset-or-tune), with
+# REGEN and DIR stacked in a column on the right, channel and the shared BLEND A>B knob under
+# them. GLOBAL mirrors the same 4-column grid so all three tabs read the same way. A top band
+# (art file=images/acid_top.svg) carries the "ACID" wordmark in a second, fun/rounded font
+# (Earth Normal) plus the classic acid-house smiley, faded into the background.
+style=td3
+label_scale=1.3
+art_css=skin.css
+theme_bg=f5c400
+theme_panel=f5c400
+theme_line=0a0a0a
+theme_ink=f0ede4
+theme_ink_dim=9a9689
+theme_ink_faint=5a5648
+theme_accent=f5c400
+theme_accent_hi=ffe066
+theme_knob_face=2a2a2a
+theme_knob_ring=050505
+theme_bar=d9ac00
+theme_seg_active=f5c400
+theme_seg_inactive=2a2a2a
+theme_seg_active_tx=0a0a0a
+theme_btn_text=ffffff
+theme_well=0a0a0a
+theme_knob_off=4a4a4a
+theme_tab_on=1f1f1f
+theme_lcd=0a0a0a
+theme_box=1f1f1f
+theme_btn_bg=e8341c
+theme_chrome_ink=0a0a0a
+theme_go_on=35d07f
+theme_go_off=e8341c
+theme_tabs=d9ac00
+
+[tab SEQ A]
+art file=images/acid_top.svg x=36 y=88 w=1208 h=112
+frame x=36 y=210 w=1207 h=520 title="SEQUENCER A"
+button cx=130 cy=300 label="GENERATE" key=a_generate
+button cx=330 cy=300 label="MUTATE" key=a_mutate
+knob cx=870 cy=320 r=24 label="MIDI CH" key=a_channel
+popup cx=1070 cy=385 w=240 h=48 label="REGEN" key=a_auto_gen
+enum_h cx=1070 cy=470 label="DIR" key=a_dir sw=90
+knob cx=1070 cy=555 r=40 label="BLEND A>B" key=blend
+knob cx=130 cy=390 r=40 label="DENSITY" key=a_density
+knob cx=330 cy=390 r=40 label="ACCENT" key=a_accent
+knob cx=530 cy=390 r=40 label="SLIDE" key=a_slide
+knob cx=730 cy=390 r=40 label="OCTAVES" key=a_octaves
+knob cx=130 cy=560 r=40 label="ALGO A" key=a_algo
+knob cx=330 cy=560 r=40 label="LENGTH" key=a_length
+knob cx=530 cy=560 r=40 label="GATE" key=a_gate
+knob cx=730 cy=560 r=40 label="OFFSET" key=a_offset
+qlinks "SEQ A" = a_generate,a_mutate,a_channel,a_auto_gen,a_dir,blend,a_density,a_accent,a_slide,a_octaves,a_algo,a_length,a_gate,a_offset
+
+[tab SEQ B]
+art file=images/acid_top.svg x=36 y=88 w=1208 h=112
+frame x=36 y=210 w=1207 h=520 title="SEQUENCER B"
+button cx=130 cy=300 label="GENERATE" key=b_generate
+button cx=330 cy=300 label="MUTATE" key=b_mutate
+knob cx=870 cy=320 r=24 label="MIDI CH" key=b_channel
+popup cx=1070 cy=385 w=240 h=48 label="REGEN" key=b_auto_gen
+enum_h cx=1070 cy=470 label="DIR" key=b_dir sw=90
+knob cx=1070 cy=555 r=40 label="BLEND A>B" key=blend
+knob cx=130 cy=390 r=40 label="DENSITY" key=b_density
+knob cx=330 cy=390 r=40 label="ACCENT" key=b_accent
+knob cx=530 cy=390 r=40 label="SLIDE" key=b_slide
+knob cx=730 cy=390 r=40 label="OCTAVES" key=b_octaves
+knob cx=130 cy=560 r=40 label="ALGO B" key=b_algo
+knob cx=330 cy=560 r=40 label="LENGTH" key=b_length
+knob cx=530 cy=560 r=40 label="GATE" key=b_gate
+knob cx=730 cy=560 r=40 label="TUNE" key=b_tune
+qlinks "SEQ B" = b_generate,b_mutate,b_channel,b_auto_gen,b_dir,blend,b_density,b_accent,b_slide,b_octaves,b_algo,b_length,b_gate,b_tune
+
+[tab GLOBAL]
+art file=images/acid_top.svg x=36 y=88 w=1208 h=112
+frame x=36 y=210 w=1207 h=500 title="GLOBAL"
+popup cx=200 cy=336 w=260 h=50 label="SCALE" key=scale
+popup cx=480 cy=336 w=180 h=50 label="ROOT" key=root
+knob cx=830 cy=330 r=46 label="SWING" key=swing
+knob cx=1080 cy=330 r=46 label="JITTER" key=jitter
+enum_h cx=330 cy=450 label="RESET" key=reset_bars sw=90
+enum_h cx=330 cy=560 label="BLEND MODE" key=blend_mode sw=66
+knob cx=830 cy=560 r=46 label="BLEND A>B" key=blend
+toggle cx=1080 cy=560 w=150 h=52 label="CV MODE" key=cv_mode img=images/toggle_off.svg img_on=images/toggle_on.svg
+qlinks "GLOBAL" = scale,root,blend,reset_bars,swing,jitter,cv_mode,blend_mode

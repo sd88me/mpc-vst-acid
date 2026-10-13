@@ -13,7 +13,7 @@ no sound itself. It is a native VST2 plugin with a touchscreen skin and Q-Link c
 
 <img width="640" height="400" alt="2026-09-29T124456312Z" src="https://github.com/user-attachments/assets/a9bac6d3-8b13-4715-95be-18ebab731cce" />
 
-**Version 1.0.0** · GPL-3.0-only · by sd88me
+**Version 2.0.0** · GPL-3.0-only · by sd88me
 
 ## Use it
 1. Add **Acid** to an instrument track from the plugin browser.
@@ -21,21 +21,24 @@ no sound itself. It is a native VST2 plugin with a touchscreen skin and Q-Link c
    to hear it, set the MIDI input to that port and set **MIDI CH** to the channel that track listens on.
 3. Press **GENERATE** on SEQ A, and on SEQ B if you want a second line, then start the transport.
 
-The screen has three pages, and the Q-Links follow the page you are on.
+The screen has six tabs: SEQ A, EDIT A, SEQ B, EDIT B, MOD and GLOBAL. The Q-Links follow the tab you are on.
+
+![SEQ A](docs/img/seq-a.png)
+![EDIT A](docs/img/edit-a.png)
 
 ### SEQ A and SEQ B
 Each line is an independent sequencer of 2 to 32 steps. Both follow the MPC transport: every 16th is placed from the song position, so starting mid-song, looping or locating keeps Acid on the grid. The controls are the same
-on both pages.
+on both pages. Q-Links 1-8 turn the eight knobs in the order they appear (the grid left to right, top row then bottom), then GENERATE, MUTATE, BLEND, MIDI CH, REGEN and DIR.
 
 | Control | What it does |
 |---|---|
-| GENERATE | Re-roll the whole pattern from a new random seed. DENSITY, ACCENT, SLIDE, OCTAVES and ALGO are read at this moment, so they shape the *next* pattern, not the one playing |
-| MUTATE | Nudge about 25% of the steps in place (rest/note, pitch), keeping the pattern recognisable. Repeat it to keep evolving |
+| GENERATE | Pick a new random seed and start a new pattern. Clears every locked step (see EDIT) |
+| MUTATE | Nudge about 25% of the steps in place (rest/note, pitch), keeping the pattern recognisable. Repeat it to keep evolving. Mutated steps are locked, so they survive knob moves |
 | DENSITY | Chance that a step is a note rather than a rest |
 | ACCENT | Chance that a note is accented (louder) |
 | SLIDE | Chance that a note slides into the next step, 303-style. A slide into a rest becomes a plain note |
 | OCTAVES | How many octaves above the root the pitches can span, 1 to 3 |
-| ALGO | 1 is the classic density/accent/slide model. Higher values blend in a second generator (non-repeating pitches, random-walk density, pyramid accents), up to 16 |
+| ALGO | 1 is the classic density/accent/slide model. Higher values blend in a second generator (non-repeating pitches, clustered runs of notes and rests, pyramid accents), up to 16 |
 | LENGTH | Steps before the pattern loops, 2 to 32. It takes effect at once. GENERATE to fill a longer pattern with new steps |
 | GATE | Note length as a fraction of a step. It is live, and held slides ignore it |
 | OFFSET (A) / TUNE OFFSET (B) | OFFSET rotates which step plays without rewriting the pattern. TUNE OFFSET sets B's interval relative to A, ±24 semitones (+7 is a fifth above, -12 an octave below) |
@@ -44,7 +47,23 @@ on both pages.
 | MIDI CH | MIDI channel the line plays on |
 | BLEND A>B | The same control as on GLOBAL |
 
-DENSITY, ACCENT, SLIDE and OCTAVES only affect the next GENERATE or MUTATE.
+DENSITY, ACCENT, SLIDE, OCTAVES, ALGO, LENGTH and SCALE reshape the playing pattern live from the current seed, so you can sweep them without losing its character. Returning a knob to the same value gives back the same pattern. Only GENERATE picks a new seed. Patterns saved with 1.0.x will sound different, because the same seed now maps to a different pattern.
+
+### EDIT A and EDIT B
+Each line has an edit page, next to its SEQ page, with 16 steps at a time. A yellow marker above the step numbers follows the playing step (on the bar you are viewing). The 16 Q-Links turn the 16 NOTE sliders. The STEPS 1-16 / STEPS 17-32 switch picks which bar of a longer pattern you see. Per step:
+
+- **ON** switches the step between a note and a rest. A rest keeps its note, so switching it on brings the note back.
+- **NOTE** is a vertical slider in scale steps from the root. 0 is the root, in the middle, and the slider reaches two scale octaves (14 steps) above and below it.
+- **ACC** and **SLIDE** are independent, so a step can be both, as on a 303. GENERATE rolls them independently too.
+- **LOCK** marks a step as hand-edited. A locked step keeps its note, accent and slide when DENSITY, ACCENT, SLIDE, OCTAVES, ALGO, LENGTH or SCALE reshape the pattern. Editing a step locks it. Tap LOCK to hand it back to the knobs.
+
+Locks are saved with the project and cleared by GENERATE and REGEN.
+
+### MOD
+Two LFOs, each with two modulation slots. Per LFO: SHAPE (sine, triangle, saw, square or sample and hold), RATE (0.05 to 20 Hz) or, with SYNC on, a cycle of 1/4 note up to 16 bars locked to the song position. Each slot has a destination and an AMOUNT from -100 to +100. Destinations are DENSITY, ACCENT, SLIDE, OCTAVES, LENGTH, GATE and OFFSET on either line, plus BLEND.
+Your knob values are never changed, so the knobs and the saved project show your own settings. The pattern follows the modulation, so the edit pages move while an LFO is on density, accent, slide, octaves or length. Q-Links 1-8 are LFO 1 and 9-16 are LFO 2.
+
+![MOD](docs/img/mod.png)
 
 ### GLOBAL
 | Control | What it does |
@@ -71,7 +90,7 @@ repeatable rather than random.
 | FILL | A plays, and B fills A's rests | -63 is A alone, centre is the fill result, +64 is B alone |
 | XOR | Plays only where exactly one line has a note: interlocking, syncopated | Same sweep as FILL |
 | LOCK | Plays only where both lines have a note: sparse and tight | Same sweep as FILL |
-| CHAIN | Call and response: A plays a full pass, then B answers with a full pass | Sets the pass ratio. Centre is one pass each, and the ends give one side up to 8:1 |
+| CHAIN | Call and response: A plays a full pass, then B answers with a full pass | Snaps to real pass ratios, 8:1 down to 1:1 and on to 1:8, plus A only and B only. A readout above the knob shows the current ratio |
 
 Settings are saved with your project.
 
@@ -84,8 +103,8 @@ Settings are saved with your project.
 ## Install
 1. Download `Acid-<version>-mpc-armv7.zip` from the
    [Releases page](https://github.com/sd88me/mpc-vst-acid/releases) and unzip it.
-2. Copy the folder to the device: `scp -r Acid-1.0.0 root@<device-ip>:/tmp/`
-3. Run the installer: `ssh root@<device-ip> sh /tmp/Acid-1.0.0/install.sh`
+2. Copy the folder to the device: `scp -r Acid-2.0.0 root@<device-ip>:/tmp/`
+3. Run the installer: `ssh root@<device-ip> sh /tmp/Acid-2.0.0/install.sh`
 
 The installer **stops MPC** (save your project first), copies the plugin and skin, backs up
 `MPC.settings`, registers the plugin and restarts MPC. Run it again to upgrade in place. Add `-y` to skip
