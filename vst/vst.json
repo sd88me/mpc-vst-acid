@@ -2,7 +2,7 @@
   "name": "Acid",
   "vendor": "sd88me",
   "uid": "AcId",
-  "version": 2000,
+  "version": 2100,
   "so": "acid.so",
   "module": "module.json",
   "layout": "layout.conf",
