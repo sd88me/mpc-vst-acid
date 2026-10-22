@@ -231,32 +231,76 @@ FONTS = os.path.join(HERE, "fonts")
 INK = (31, 31, 31)
 
 
-def smiley_sticker(r, tilt):
-    """The acid smiley as a vinyl sticker: yellow print with its drips, a white die-cut border, a gloss and a shadow."""
+def smiley_sticker(r, tilt, seed=303):
+    """The acid smiley as an old vinyl sticker: the yellow face melting into drips that run and bead at their ends,
+    a white die-cut border that follows them, then wear: faded print, scuffs through the ink to the vinyl, grime
+    along the edges, a lifted corner's shadow."""
+    import random
+    rnd = random.Random(seed)
     k = SS
     R = r * k
-    s = int(2.8 * R)
+    s = int(3.4 * R)
     c = s / 2
+    cy = c - 0.35 * R
     art = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     d = ImageDraw.Draw(art)
-    y = (255, 224, 102, 255)
-    d.ellipse((c - R, c - R, c + R, c + R), fill=y, outline=INK + (255,), width=int(0.1 * R))
-    for ex in (-0.4, 0.4):
-        d.ellipse((c + ex * R - 0.15 * R, c - 0.37 * R, c + ex * R + 0.15 * R, c - 0.08 * R), fill=INK + (255,))
-    d.arc((c - 0.5 * R, c - 0.35 * R, c + 0.5 * R, c + 0.6 * R), start=20, end=160, fill=INK + (255,), width=int(0.08 * R))
-    # die-cut border: the art's silhouette grown, in white
-    sil = art.getchannel("A").point(lambda v: 255 if v > 20 else 0)
-    border = sil.filter(ImageFilter.MaxFilter(int(0.18 * R) | 1)).filter(ImageFilter.GaussianBlur(0.6 * k))
+    y = (255, 222, 96, 255)
+    # drips: a run from the face's lower edge, narrowing, ending in a round bead
+    for ang, length, wd in ((-38, 0.42, 0.19), (-12, 0.7, 0.24), (14, 0.6, 0.21), (36, 0.32, 0.17)):
+        x0, y0 = polar(c, cy, R * 0.92, 180 + ang)
+        top_w, neck = wd * R, wd * R * 0.62
+        yb = y0 + length * R
+        d.polygon([(x0 - top_w, y0 - 0.15 * R), (x0 + top_w, y0 - 0.15 * R), (x0 + neck, yb), (x0 - neck, yb)], fill=y)
+        bead = wd * R * 0.95
+        d.ellipse((x0 - bead, yb - bead * 0.9, x0 + bead, yb + bead * 1.1), fill=y)
+    d.ellipse((c - R, cy - R, c + R, cy + R), fill=y)
+    sil = art.getchannel("A")
+    # outline the whole melted shape, then the face
+    edge = ImageChops.subtract(sil, sil.filter(ImageFilter.MinFilter(int(0.16 * R) | 1)))   # an ink line inside the edge
+    ink = Image.new("RGBA", (s, s), INK + (0,))
+    ink.putalpha(edge)
+    art.alpha_composite(ink)
+    d = ImageDraw.Draw(art)
+    for ex in (-0.38, 0.38):
+        d.ellipse((c + ex * R - 0.14 * R, cy - 0.36 * R, c + ex * R + 0.14 * R, cy - 0.06 * R), fill=INK + (255,))
+    d.arc((c - 0.52 * R, cy - 0.35 * R, c + 0.52 * R, cy + 0.6 * R), start=18, end=162, fill=INK + (255,), width=int(0.08 * R))
+    # die-cut vinyl border following the drips
+    full = art.getchannel("A").point(lambda v: 255 if v > 20 else 0)
+    border = full.filter(ImageFilter.MaxFilter(int(0.16 * R) | 1)).filter(ImageFilter.GaussianBlur(0.7 * k))
+    # wear: print faded in patches, scuffs through to the white vinyl
+    fade = Image.effect_noise((s // 24, s // 24), 60).resize((s, s), Image.BICUBIC).point(lambda v: 255 - max(0, v - 128) // 2)
+    worn = art.getchannel("A")
+    scuffs = Image.new("L", (s, s), 0)
+    sd = ImageDraw.Draw(scuffs)
+    for _ in range(26):
+        x, yy = rnd.uniform(0.2, 0.8) * s, rnd.uniform(0.1, 0.8) * s
+        L = rnd.uniform(0.05, 0.22) * R
+        a2 = rnd.uniform(0, 180)
+        x1, y1 = polar(x, yy, L, a2)
+        sd.line([(x, yy), (x1, y1)], fill=255, width=max(1, int(rnd.uniform(0.5, 1.6) * k)))
+    for _ in range(120):
+        x, yy = rnd.uniform(0, s), rnd.uniform(0, s)
+        rr = rnd.uniform(0.3, 1.2) * k
+        sd.ellipse((x - rr, yy - rr, x + rr, yy + rr), fill=255)
+    worn = ImageChops.multiply(ImageChops.subtract(worn, scuffs), fade)
+    art.putalpha(worn)
     st = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     sh = Image.new("RGBA", (s, s), (40, 28, 0, 0))
-    sh.putalpha(ImageChops.offset(border, int(2 * k), int(3 * k)).filter(ImageFilter.GaussianBlur(2.5 * k)).point(lambda v: v * 150 // 255))
+    moved = Image.new("L", (s, s), 0)                 # shifted down-right (ImageChops.offset would wrap round)
+    moved.paste(border, (int(2 * k), int(3 * k)))
+    sh.putalpha(moved.filter(ImageFilter.GaussianBlur(2.5 * k)).point(lambda v: v * 150 // 255))
     st.alpha_composite(sh)
-    white = Image.new("RGBA", (s, s), (250, 248, 240, 0))
-    white.putalpha(border)
-    st.alpha_composite(white)
+    vinyl = Image.new("RGBA", (s, s), (238, 234, 218, 0))
+    vinyl.putalpha(border)
+    st.alpha_composite(vinyl)
     st.alpha_composite(art)
+    # grime collected along the edge, and a soft gloss
+    rim = ImageChops.subtract(border, border.filter(ImageFilter.MinFilter(int(0.07 * R) | 1))).filter(ImageFilter.GaussianBlur(1.2 * k))
+    grime = Image.new("RGBA", (s, s), (110, 92, 50, 0))
+    grime.putalpha(ImageChops.multiply(rim, Image.effect_noise((s, s), 70).point(lambda v: min(255, v + 40))).point(lambda v: v * 150 // 255))
+    st.alpha_composite(grime)
     gloss = Image.new("L", (s, s), 0)
-    ImageDraw.Draw(gloss).ellipse((c - 0.8 * R, c - 0.95 * R, c + 0.3 * R, c - 0.2 * R), fill=90)
+    ImageDraw.Draw(gloss).ellipse((c - 0.8 * R, cy - 0.95 * R, c + 0.3 * R, cy - 0.2 * R), fill=55)
     gl = Image.new("RGBA", (s, s), (255, 255, 255, 0))
     gl.putalpha(ImageChops.multiply(gloss.filter(ImageFilter.GaussianBlur(5 * k)), border))
     st.alpha_composite(gl)
@@ -265,8 +309,8 @@ def smiley_sticker(r, tilt):
 
 def top_band():
     """The wordmark printed on the yellow in charcoal (silk screen: flat ink, a faint light edge under it), the
-    tagline, and the two smileys stuck on as stickers. 1208 x 112, placed at x=36 y=88."""
-    w, h = 1208 * SS, 112 * SS
+    tagline, and the smiley stuck on over the D as an old sticker. 1208 x 122, placed at x=36 y=88."""
+    w, h = 1208 * SS, 122 * SS
     im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
     logo = ImageFont.truetype(os.path.join(FONTS, "Earth_Normal.ttf"), 72 * SS)
@@ -275,12 +319,15 @@ def top_band():
     tag = ImageFont.truetype(os.path.join(FONTS, "Univers_53_Extended_Regular.otf"), 15 * SS)
     for i, ln in enumerate(("GENERATIVE ACID", "BASSLINE SEQUENCER")):
         y = (52 + 22 * i) * SS
-        d.text((440 * SS, y + SS), ln, font=tag, fill=(255, 236, 140, 150), anchor="lm", stroke_width=SS // 2, stroke_fill=(255, 236, 140, 150))
-        d.text((440 * SS, y), ln, font=tag, fill=INK + (255,), anchor="lm", stroke_width=SS // 2, stroke_fill=INK + (255,))
-    for cx, cy, r, tilt in ((370, 54, 30, 9), (770, 58, 34, -12)):
-        st = smiley_sticker(r, tilt)
-        im.alpha_composite(st, (int(cx * SS - st.width / 2), int(cy * SS - st.height / 2)))
-    im.resize((1208, 112), Image.LANCZOS).save(os.path.join(IMG, "acid_top.png"), optimize=True)
+        d.text((480 * SS, y + SS), ln, font=tag, fill=(255, 236, 140, 150), anchor="lm", stroke_width=SS // 2, stroke_fill=(255, 236, 140, 150))
+        d.text((480 * SS, y), ln, font=tag, fill=INK + (255,), anchor="lm", stroke_width=SS // 2, stroke_fill=INK + (255,))
+    # the one sticker, stuck over the end of the D, its drips running down past the band
+    end = 60 + logo.getlength("ACID") / SS
+    r = 36
+    st = smiley_sticker(r, -9)
+    cx, cy = end + 14, 50
+    im.alpha_composite(st, (int(cx * SS - st.width / 2), int((cy + 0.35 * r) * SS - st.height / 2)))
+    im.resize((1208, 122), Image.LANCZOS).save(os.path.join(IMG, "acid_top.png"), optimize=True)
 
 
 if __name__ == "__main__":
