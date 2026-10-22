@@ -221,3 +221,67 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------- the top band (art file=images/acid_top.png)
+
+from PIL import ImageFont   # noqa: E402
+
+FONTS = os.path.join(HERE, "fonts")
+INK = (31, 31, 31)
+
+
+def smiley_sticker(r, tilt):
+    """The acid smiley as a vinyl sticker: yellow print with its drips, a white die-cut border, a gloss and a shadow."""
+    k = SS
+    R = r * k
+    s = int(2.8 * R)
+    c = s / 2
+    art = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(art)
+    y = (255, 224, 102, 255)
+    d.ellipse((c - R, c - R, c + R, c + R), fill=y, outline=INK + (255,), width=int(0.1 * R))
+    for ex in (-0.4, 0.4):
+        d.ellipse((c + ex * R - 0.15 * R, c - 0.37 * R, c + ex * R + 0.15 * R, c - 0.08 * R), fill=INK + (255,))
+    d.arc((c - 0.5 * R, c - 0.35 * R, c + 0.5 * R, c + 0.6 * R), start=20, end=160, fill=INK + (255,), width=int(0.08 * R))
+    # die-cut border: the art's silhouette grown, in white
+    sil = art.getchannel("A").point(lambda v: 255 if v > 20 else 0)
+    border = sil.filter(ImageFilter.MaxFilter(int(0.18 * R) | 1)).filter(ImageFilter.GaussianBlur(0.6 * k))
+    st = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    sh = Image.new("RGBA", (s, s), (40, 28, 0, 0))
+    sh.putalpha(ImageChops.offset(border, int(2 * k), int(3 * k)).filter(ImageFilter.GaussianBlur(2.5 * k)).point(lambda v: v * 150 // 255))
+    st.alpha_composite(sh)
+    white = Image.new("RGBA", (s, s), (250, 248, 240, 0))
+    white.putalpha(border)
+    st.alpha_composite(white)
+    st.alpha_composite(art)
+    gloss = Image.new("L", (s, s), 0)
+    ImageDraw.Draw(gloss).ellipse((c - 0.8 * R, c - 0.95 * R, c + 0.3 * R, c - 0.2 * R), fill=90)
+    gl = Image.new("RGBA", (s, s), (255, 255, 255, 0))
+    gl.putalpha(ImageChops.multiply(gloss.filter(ImageFilter.GaussianBlur(5 * k)), border))
+    st.alpha_composite(gl)
+    return st.rotate(tilt, resample=Image.BICUBIC)
+
+
+def top_band():
+    """The wordmark printed on the yellow in charcoal (silk screen: flat ink, a faint light edge under it), the
+    tagline, and the two smileys stuck on as stickers. 1208 x 112, placed at x=36 y=88."""
+    w, h = 1208 * SS, 112 * SS
+    im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    logo = ImageFont.truetype(os.path.join(FONTS, "Earth_Normal.ttf"), 72 * SS)
+    d.text((60 * SS, (84 + 1.2) * SS), "ACID", font=logo, fill=(255, 236, 140, 150), anchor="ls")
+    d.text((60 * SS, 84 * SS), "ACID", font=logo, fill=INK + (255,), anchor="ls")
+    tag = ImageFont.truetype(os.path.join(FONTS, "Univers_53_Extended_Regular.otf"), 15 * SS)
+    for i, ln in enumerate(("GENERATIVE ACID", "BASSLINE SEQUENCER")):
+        y = (52 + 22 * i) * SS
+        d.text((440 * SS, y + SS), ln, font=tag, fill=(255, 236, 140, 150), anchor="lm", stroke_width=SS // 2, stroke_fill=(255, 236, 140, 150))
+        d.text((440 * SS, y), ln, font=tag, fill=INK + (255,), anchor="lm", stroke_width=SS // 2, stroke_fill=INK + (255,))
+    for cx, cy, r, tilt in ((370, 54, 30, 9), (770, 58, 34, -12)):
+        st = smiley_sticker(r, tilt)
+        im.alpha_composite(st, (int(cx * SS - st.width / 2), int(cy * SS - st.height / 2)))
+    im.resize((1208, 112), Image.LANCZOS).save(os.path.join(IMG, "acid_top.png"), optimize=True)
+
+
+if __name__ == "__main__":
+    top_band()
