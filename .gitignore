@@ -1,1 +1,4 @@
 vst/build/
+build/
+dist/
+__pycache__/

@@ -1,0 +1,1990 @@
+{
+ "params": [
+  {
+   "key": "a_generate",
+   "name": "Generate",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.0,
+   "momentary": true
+  },
+  {
+   "key": "a_mutate",
+   "name": "Mutate",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.0,
+   "momentary": true
+  },
+  {
+   "key": "a_density",
+   "name": "Density",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.7
+  },
+  {
+   "key": "a_accent",
+   "name": "Accent",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.4
+  },
+  {
+   "key": "a_slide",
+   "name": "Slide",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.25
+  },
+  {
+   "key": "a_octaves",
+   "name": "Octaves",
+   "min": 1.0,
+   "max": 3.0,
+   "default": 2.0
+  },
+  {
+   "key": "a_length",
+   "name": "Length",
+   "min": 2.0,
+   "max": 32.0,
+   "default": 16.0
+  },
+  {
+   "key": "a_gate",
+   "name": "Gate",
+   "min": 0.05,
+   "max": 1.0,
+   "default": 0.5
+  },
+  {
+   "key": "a_channel",
+   "name": "MIDI CH",
+   "min": 1.0,
+   "max": 16.0,
+   "default": 1.0
+  },
+  {
+   "key": "a_offset",
+   "name": "Offset",
+   "min": 0.0,
+   "max": 31.0,
+   "default": 0.0
+  },
+  {
+   "key": "a_dir",
+   "name": "Dir",
+   "options": [
+    "FWD",
+    "REV",
+    "PENDUL"
+   ],
+   "default": "FWD"
+  },
+  {
+   "key": "a_auto_gen",
+   "name": "Regen",
+   "options": [
+    "OFF",
+    "1 BAR",
+    "2 BARS",
+    "4 BARS",
+    "8 BARS",
+    "16 BARS",
+    "32 BARS"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_generate",
+   "name": "Generate",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.0,
+   "momentary": true
+  },
+  {
+   "key": "b_mutate",
+   "name": "Mutate",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.0,
+   "momentary": true
+  },
+  {
+   "key": "b_density",
+   "name": "Density",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.7
+  },
+  {
+   "key": "b_accent",
+   "name": "Accent",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.4
+  },
+  {
+   "key": "b_slide",
+   "name": "Slide",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.25
+  },
+  {
+   "key": "b_octaves",
+   "name": "Octaves",
+   "min": 1.0,
+   "max": 3.0,
+   "default": 2.0
+  },
+  {
+   "key": "b_length",
+   "name": "Length",
+   "min": 2.0,
+   "max": 32.0,
+   "default": 16.0
+  },
+  {
+   "key": "b_gate",
+   "name": "Gate",
+   "min": 0.05,
+   "max": 1.0,
+   "default": 0.5
+  },
+  {
+   "key": "b_channel",
+   "name": "MIDI CH",
+   "min": 1.0,
+   "max": 16.0,
+   "default": 1.0
+  },
+  {
+   "key": "b_offset",
+   "name": "Offset",
+   "min": 0.0,
+   "max": 31.0,
+   "default": 0.0
+  },
+  {
+   "key": "b_dir",
+   "name": "Dir",
+   "options": [
+    "FWD",
+    "REV",
+    "PENDUL"
+   ],
+   "default": "FWD"
+  },
+  {
+   "key": "b_auto_gen",
+   "name": "Regen",
+   "options": [
+    "OFF",
+    "1 BAR",
+    "2 BARS",
+    "4 BARS",
+    "8 BARS",
+    "16 BARS",
+    "32 BARS"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "scale",
+   "name": "Scale",
+   "options": [
+    "MINOR",
+    "PHRYGIAN",
+    "HARM MIN",
+    "MIN PENT",
+    "DORIAN",
+    "MAJOR",
+    "PHRYG DOM",
+    "LOCRIAN",
+    "WHOLE TONE",
+    "HUNG MIN",
+    "MIN BLUES",
+    "CHROMATIC"
+   ],
+   "default": "MINOR"
+  },
+  {
+   "key": "root",
+   "name": "Root",
+   "options": [
+    "C",
+    "C#",
+    "D",
+    "D#",
+    "E",
+    "F",
+    "F#",
+    "G",
+    "G#",
+    "A",
+    "A#",
+    "B"
+   ],
+   "default": "A"
+  },
+  {
+   "key": "b_tune",
+   "name": "B Tune",
+   "min": -24.0,
+   "max": 24.0,
+   "default": 0.0
+  },
+  {
+   "key": "blend",
+   "name": "Blend A>B",
+   "min": -63.0,
+   "max": 64.0,
+   "default": -63.0
+  },
+  {
+   "key": "a_algo",
+   "name": "Algo A",
+   "min": 1.0,
+   "max": 16.0,
+   "default": 1.0
+  },
+  {
+   "key": "b_algo",
+   "name": "Algo B",
+   "min": 1.0,
+   "max": 16.0,
+   "default": 1.0
+  },
+  {
+   "key": "reset_bars",
+   "name": "Reset",
+   "options": [
+    "1 BAR",
+    "2 BARS",
+    "4 BARS",
+    "8 BARS",
+    "OFF"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "swing",
+   "name": "Swing",
+   "min": 50.0,
+   "max": 75.0,
+   "default": 50.0
+  },
+  {
+   "key": "jitter",
+   "name": "Jitter",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.0
+  },
+  {
+   "key": "blend_mode",
+   "name": "Blend Mode",
+   "options": [
+    "LAYER",
+    "MORPH",
+    "SPLIT",
+    "FILL",
+    "XOR",
+    "LOCK",
+    "CHAIN"
+   ],
+   "default": "LAYER"
+  },
+  {
+   "key": "cv_mode",
+   "name": "CV Mode",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "mute",
+   "name": "Mute",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "chain_view",
+   "name": "Chain",
+   "options": [
+    "A ONLY",
+    "A 8 : B 1",
+    "A 7 : B 1",
+    "A 6 : B 1",
+    "A 5 : B 1",
+    "A 4 : B 1",
+    "A 3 : B 1",
+    "A 2 : B 1",
+    "A 1 : B 1",
+    "A 1 : B 2",
+    "A 1 : B 3",
+    "A 1 : B 4",
+    "A 1 : B 5",
+    "A 1 : B 6",
+    "A 1 : B 7",
+    "A 1 : B 8",
+    "B ONLY"
+   ],
+   "default": "A ONLY"
+  },
+  {
+   "key": "a_edit_bar",
+   "name": "Bar",
+   "options": [
+    "STEPS 1-16",
+    "STEPS 17-32"
+   ],
+   "default": "STEPS 1-16"
+  },
+  {
+   "key": "a_e0_gate",
+   "name": "On 1",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "a_e0_note",
+   "name": "Step 1",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 0.0
+  },
+  {
+   "key": "a_e0_acc",
+   "name": "Acc 1",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "a_e0_sld",
+   "name": "Sld 1",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e0_lock",
+   "name": "Lock 1",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e1_gate",
+   "name": "On 2",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "a_e1_note",
+   "name": "Step 2",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 8.0
+  },
+  {
+   "key": "a_e1_acc",
+   "name": "Acc 2",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e1_sld",
+   "name": "Sld 2",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e1_lock",
+   "name": "Lock 2",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e2_gate",
+   "name": "On 3",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "a_e2_note",
+   "name": "Step 3",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 7.0
+  },
+  {
+   "key": "a_e2_acc",
+   "name": "Acc 3",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e2_sld",
+   "name": "Sld 3",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "a_e2_lock",
+   "name": "Lock 3",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e3_gate",
+   "name": "On 4",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "a_e3_note",
+   "name": "Step 4",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 1.0
+  },
+  {
+   "key": "a_e3_acc",
+   "name": "Acc 4",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e3_sld",
+   "name": "Sld 4",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e3_lock",
+   "name": "Lock 4",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e4_gate",
+   "name": "On 5",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "a_e4_note",
+   "name": "Step 5",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 11.0
+  },
+  {
+   "key": "a_e4_acc",
+   "name": "Acc 5",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "a_e4_sld",
+   "name": "Sld 5",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e4_lock",
+   "name": "Lock 5",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e5_gate",
+   "name": "On 6",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "a_e5_note",
+   "name": "Step 6",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 0.0
+  },
+  {
+   "key": "a_e5_acc",
+   "name": "Acc 6",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e5_sld",
+   "name": "Sld 6",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "a_e5_lock",
+   "name": "Lock 6",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e6_gate",
+   "name": "On 7",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "a_e6_note",
+   "name": "Step 7",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 10.0
+  },
+  {
+   "key": "a_e6_acc",
+   "name": "Acc 7",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e6_sld",
+   "name": "Sld 7",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e6_lock",
+   "name": "Lock 7",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e7_gate",
+   "name": "On 8",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "a_e7_note",
+   "name": "Step 8",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 2.0
+  },
+  {
+   "key": "a_e7_acc",
+   "name": "Acc 8",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "a_e7_sld",
+   "name": "Sld 8",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e7_lock",
+   "name": "Lock 8",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e8_gate",
+   "name": "On 9",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e8_note",
+   "name": "Step 9",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 13.0
+  },
+  {
+   "key": "a_e8_acc",
+   "name": "Acc 9",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e8_sld",
+   "name": "Sld 9",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e8_lock",
+   "name": "Lock 9",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e9_gate",
+   "name": "On 10",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "a_e9_note",
+   "name": "Step 10",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 0.0
+  },
+  {
+   "key": "a_e9_acc",
+   "name": "Acc 10",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e9_sld",
+   "name": "Sld 10",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e9_lock",
+   "name": "Lock 10",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e10_gate",
+   "name": "On 11",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "a_e10_note",
+   "name": "Step 11",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 2.0
+  },
+  {
+   "key": "a_e10_acc",
+   "name": "Acc 11",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e10_sld",
+   "name": "Sld 11",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e10_lock",
+   "name": "Lock 11",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e11_gate",
+   "name": "On 12",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "a_e11_note",
+   "name": "Step 12",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 7.0
+  },
+  {
+   "key": "a_e11_acc",
+   "name": "Acc 12",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e11_sld",
+   "name": "Sld 12",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e11_lock",
+   "name": "Lock 12",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e12_gate",
+   "name": "On 13",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "a_e12_note",
+   "name": "Step 13",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 0.0
+  },
+  {
+   "key": "a_e12_acc",
+   "name": "Acc 13",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e12_sld",
+   "name": "Sld 13",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e12_lock",
+   "name": "Lock 13",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e13_gate",
+   "name": "On 14",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "a_e13_note",
+   "name": "Step 14",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 5.0
+  },
+  {
+   "key": "a_e13_acc",
+   "name": "Acc 14",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e13_sld",
+   "name": "Sld 14",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e13_lock",
+   "name": "Lock 14",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e14_gate",
+   "name": "On 15",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "a_e14_note",
+   "name": "Step 15",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 9.0
+  },
+  {
+   "key": "a_e14_acc",
+   "name": "Acc 15",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e14_sld",
+   "name": "Sld 15",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e14_lock",
+   "name": "Lock 15",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e15_gate",
+   "name": "On 16",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e15_note",
+   "name": "Step 16",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 10.0
+  },
+  {
+   "key": "a_e15_acc",
+   "name": "Acc 16",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e15_sld",
+   "name": "Sld 16",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_e15_lock",
+   "name": "Lock 16",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_edit_bar",
+   "name": "Bar",
+   "options": [
+    "STEPS 1-16",
+    "STEPS 17-32"
+   ],
+   "default": "STEPS 1-16"
+  },
+  {
+   "key": "b_e0_gate",
+   "name": "On 1",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "b_e0_note",
+   "name": "Step 1",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 9.0
+  },
+  {
+   "key": "b_e0_acc",
+   "name": "Acc 1",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e0_sld",
+   "name": "Sld 1",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "b_e0_lock",
+   "name": "Lock 1",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e1_gate",
+   "name": "On 2",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "b_e1_note",
+   "name": "Step 2",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 10.0
+  },
+  {
+   "key": "b_e1_acc",
+   "name": "Acc 2",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e1_sld",
+   "name": "Sld 2",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e1_lock",
+   "name": "Lock 2",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e2_gate",
+   "name": "On 3",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "b_e2_note",
+   "name": "Step 3",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 11.0
+  },
+  {
+   "key": "b_e2_acc",
+   "name": "Acc 3",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e2_sld",
+   "name": "Sld 3",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "b_e2_lock",
+   "name": "Lock 3",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e3_gate",
+   "name": "On 4",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "b_e3_note",
+   "name": "Step 4",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 10.0
+  },
+  {
+   "key": "b_e3_acc",
+   "name": "Acc 4",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "b_e3_sld",
+   "name": "Sld 4",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e3_lock",
+   "name": "Lock 4",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e4_gate",
+   "name": "On 5",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e4_note",
+   "name": "Step 5",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 0.0
+  },
+  {
+   "key": "b_e4_acc",
+   "name": "Acc 5",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e4_sld",
+   "name": "Sld 5",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e4_lock",
+   "name": "Lock 5",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e5_gate",
+   "name": "On 6",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "b_e5_note",
+   "name": "Step 6",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 7.0
+  },
+  {
+   "key": "b_e5_acc",
+   "name": "Acc 6",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "b_e5_sld",
+   "name": "Sld 6",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e5_lock",
+   "name": "Lock 6",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e6_gate",
+   "name": "On 7",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e6_note",
+   "name": "Step 7",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 9.0
+  },
+  {
+   "key": "b_e6_acc",
+   "name": "Acc 7",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e6_sld",
+   "name": "Sld 7",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e6_lock",
+   "name": "Lock 7",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e7_gate",
+   "name": "On 8",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "b_e7_note",
+   "name": "Step 8",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 5.0
+  },
+  {
+   "key": "b_e7_acc",
+   "name": "Acc 8",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e7_sld",
+   "name": "Sld 8",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e7_lock",
+   "name": "Lock 8",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e8_gate",
+   "name": "On 9",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e8_note",
+   "name": "Step 9",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 10.0
+  },
+  {
+   "key": "b_e8_acc",
+   "name": "Acc 9",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e8_sld",
+   "name": "Sld 9",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e8_lock",
+   "name": "Lock 9",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e9_gate",
+   "name": "On 10",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "b_e9_note",
+   "name": "Step 10",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 2.0
+  },
+  {
+   "key": "b_e9_acc",
+   "name": "Acc 10",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e9_sld",
+   "name": "Sld 10",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e9_lock",
+   "name": "Lock 10",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e10_gate",
+   "name": "On 11",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e10_note",
+   "name": "Step 11",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 4.0
+  },
+  {
+   "key": "b_e10_acc",
+   "name": "Acc 11",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e10_sld",
+   "name": "Sld 11",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e10_lock",
+   "name": "Lock 11",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e11_gate",
+   "name": "On 12",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e11_note",
+   "name": "Step 12",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 5.0
+  },
+  {
+   "key": "b_e11_acc",
+   "name": "Acc 12",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e11_sld",
+   "name": "Sld 12",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e11_lock",
+   "name": "Lock 12",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e12_gate",
+   "name": "On 13",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "b_e12_note",
+   "name": "Step 13",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 5.0
+  },
+  {
+   "key": "b_e12_acc",
+   "name": "Acc 13",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "b_e12_sld",
+   "name": "Sld 13",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e12_lock",
+   "name": "Lock 13",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e13_gate",
+   "name": "On 14",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "b_e13_note",
+   "name": "Step 14",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 8.0
+  },
+  {
+   "key": "b_e13_acc",
+   "name": "Acc 14",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e13_sld",
+   "name": "Sld 14",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e13_lock",
+   "name": "Lock 14",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e14_gate",
+   "name": "On 15",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e14_note",
+   "name": "Step 15",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 6.0
+  },
+  {
+   "key": "b_e14_acc",
+   "name": "Acc 15",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e14_sld",
+   "name": "Sld 15",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e14_lock",
+   "name": "Lock 15",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "b_e15_gate",
+   "name": "On 16",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "b_e15_note",
+   "name": "Step 16",
+   "min": -14.0,
+   "max": 14.0,
+   "default": 13.0
+  },
+  {
+   "key": "b_e15_acc",
+   "name": "Acc 16",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "b_e15_sld",
+   "name": "Sld 16",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "ON"
+  },
+  {
+   "key": "b_e15_lock",
+   "name": "Lock 16",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "a_run",
+   "name": "Run A",
+   "options": [
+    "-",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ],
+   "default": "16"
+  },
+  {
+   "key": "b_run",
+   "name": "Run B",
+   "options": [
+    "-",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ],
+   "default": "16"
+  },
+  {
+   "key": "lfo1_shape",
+   "name": "LFO1 Shape",
+   "options": [
+    "SINE",
+    "TRI",
+    "SAW",
+    "SQR",
+    "S&H"
+   ],
+   "default": "SINE"
+  },
+  {
+   "key": "lfo1_rate",
+   "name": "LFO1 Rate",
+   "min": 0.0,
+   "max": 100.0,
+   "default": 40.0
+  },
+  {
+   "key": "lfo1_sync",
+   "name": "LFO1 Sync",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "lfo1_div",
+   "name": "LFO1 Div",
+   "options": [
+    "1/4",
+    "1/2",
+    "1 BAR",
+    "2 BARS",
+    "4 BARS",
+    "8 BARS",
+    "16 BARS"
+   ],
+   "default": "1 BAR"
+  },
+  {
+   "key": "lfo1_d1",
+   "name": "LFO1 Dest 1",
+   "options": [
+    "OFF",
+    "A DENSITY",
+    "A ACCENT",
+    "A SLIDE",
+    "A OCTAVES",
+    "A LENGTH",
+    "A GATE",
+    "A OFFSET",
+    "B DENSITY",
+    "B ACCENT",
+    "B SLIDE",
+    "B OCTAVES",
+    "B LENGTH",
+    "B GATE",
+    "B OFFSET",
+    "BLEND"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "lfo1_a1",
+   "name": "LFO1 Amt 1",
+   "min": -100.0,
+   "max": 100.0,
+   "default": 0.0
+  },
+  {
+   "key": "lfo1_d2",
+   "name": "LFO1 Dest 2",
+   "options": [
+    "OFF",
+    "A DENSITY",
+    "A ACCENT",
+    "A SLIDE",
+    "A OCTAVES",
+    "A LENGTH",
+    "A GATE",
+    "A OFFSET",
+    "B DENSITY",
+    "B ACCENT",
+    "B SLIDE",
+    "B OCTAVES",
+    "B LENGTH",
+    "B GATE",
+    "B OFFSET",
+    "BLEND"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "lfo1_a2",
+   "name": "LFO1 Amt 2",
+   "min": -100.0,
+   "max": 100.0,
+   "default": 0.0
+  },
+  {
+   "key": "lfo2_shape",
+   "name": "LFO2 Shape",
+   "options": [
+    "SINE",
+    "TRI",
+    "SAW",
+    "SQR",
+    "S&H"
+   ],
+   "default": "SINE"
+  },
+  {
+   "key": "lfo2_rate",
+   "name": "LFO2 Rate",
+   "min": 0.0,
+   "max": 100.0,
+   "default": 40.0
+  },
+  {
+   "key": "lfo2_sync",
+   "name": "LFO2 Sync",
+   "options": [
+    "OFF",
+    "ON"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "lfo2_div",
+   "name": "LFO2 Div",
+   "options": [
+    "1/4",
+    "1/2",
+    "1 BAR",
+    "2 BARS",
+    "4 BARS",
+    "8 BARS",
+    "16 BARS"
+   ],
+   "default": "1 BAR"
+  },
+  {
+   "key": "lfo2_d1",
+   "name": "LFO2 Dest 1",
+   "options": [
+    "OFF",
+    "A DENSITY",
+    "A ACCENT",
+    "A SLIDE",
+    "A OCTAVES",
+    "A LENGTH",
+    "A GATE",
+    "A OFFSET",
+    "B DENSITY",
+    "B ACCENT",
+    "B SLIDE",
+    "B OCTAVES",
+    "B LENGTH",
+    "B GATE",
+    "B OFFSET",
+    "BLEND"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "lfo2_a1",
+   "name": "LFO2 Amt 1",
+   "min": -100.0,
+   "max": 100.0,
+   "default": 0.0
+  },
+  {
+   "key": "lfo2_d2",
+   "name": "LFO2 Dest 2",
+   "options": [
+    "OFF",
+    "A DENSITY",
+    "A ACCENT",
+    "A SLIDE",
+    "A OCTAVES",
+    "A LENGTH",
+    "A GATE",
+    "A OFFSET",
+    "B DENSITY",
+    "B ACCENT",
+    "B SLIDE",
+    "B OCTAVES",
+    "B LENGTH",
+    "B GATE",
+    "B OFFSET",
+    "BLEND"
+   ],
+   "default": "OFF"
+  },
+  {
+   "key": "lfo2_a2",
+   "name": "LFO2 Amt 2",
+   "min": -100.0,
+   "max": 100.0,
+   "default": 0.0
+  }
+ ]
+}

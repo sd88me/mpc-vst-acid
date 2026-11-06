@@ -1,0 +1,16 @@
+{
+  "name": "Acid",
+  "manufacturer": "sd88me",
+  "version": "3.0.0",
+  "kind": "instrument",
+  "uid": "AcId",
+  "numInputs": 0,
+  "numOutputs": 2,
+  "category": "Synth",
+  "file32": "VST/acid-arm32.so",
+  "file64": "VST/acid-arm64.so",
+  "description": "A TB-303-style acid bassline sequencer: two generated bass lines you can blend, played as MIDI into a synth track. Makes no sound itself.",
+  "author": "sd88me",
+  "url": "https://github.com/sd88me/mpc-vst-acid",
+  "license": "GPL-3.0-only"
+}

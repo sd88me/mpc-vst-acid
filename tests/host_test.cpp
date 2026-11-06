@@ -1,0 +1,293 @@
+/* Offline x86 host test for acid_vst's VST2 wrapper (no ALSA seq output needed to
+ * exercise the wrapper logic -- alsa_open()/alsa_send() no-op gracefully when
+ * snd_seq_open() fails, e.g. no /dev/snd here). Build/run under ASan (see
+ * docs/PORTING.md "Offline test first"): two instances, param round-trip incl.
+ * an enum, a transport-driven tick that should produce audible generator
+ * activity (checked indirectly via a param readback), and chunk round-trip. */
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
+#include <math.h>
+#include <stdlib.h>
+#include "params_gen.h"
+
+typedef struct AEffect AEffect;
+typedef intptr_t (*cb)(AEffect *, int32_t, int32_t, intptr_t, void *, float);
+struct AEffect {
+    int32_t magic;
+    intptr_t (*d)(AEffect *, int32_t, int32_t, intptr_t, void *, float);
+    void *proc;
+    void (*setP)(AEffect *, int32_t, float);
+    float (*getP)(AEffect *, int32_t);
+    int32_t np, npar, ni, no, flags;
+    intptr_t r1, r2;
+    int32_t a, b, c;
+    float io;
+    void *obj, *user;
+    int32_t uid, ver;
+    void (*pr)(AEffect *, float **, float **, int32_t);
+    void *pdr;
+    char f[56];
+};
+typedef struct { double samplePos, sampleRate, nanoSeconds, ppqPos, tempo, barStartPos, cycleStartPos, cycleEndPos;
+                 int32_t timeSigNumerator, timeSigDenominator, smpteOffset, smpteFrameRate, samplesToNextClock, flags; } TI;
+enum { kPlaying = 1 << 1, kCycle = 1 << 2, kPpq = 1 << 9, kTempo = 1 << 10, kCyclePos = 1 << 12 };
+
+extern "C" AEffect *VSTPluginMain(cb);
+extern "C" long acid_dbg_steps(AEffect *);
+extern "C" float acid_dbg_bpm(void);
+extern "C" int acid_dbg_pos(AEffect *);
+extern "C" int acid_dbg_sync(AEffect *);
+
+static TI g_ti;
+static int automated[kNumParams];
+static intptr_t host(AEffect *e, int32_t op, int32_t idx, intptr_t v, void *p, float o) {
+    (void)e; (void)v; (void)p; (void)o;
+    if (op == 0 && idx >= 0 && idx < kNumParams) automated[idx]++;   /* audioMasterAutomate */
+    if (op == 1) return 2400;               /* audioMasterVersion */
+    if (op == 7) return (intptr_t)&g_ti;   /* audioMasterGetTime */
+    return 0;
+}
+
+int main(void) {
+    AEffect *a = VSTPluginMain(host), *b = VSTPluginMain(host);
+    printf("magic=%x params=%d flags=%x uid=%x twoInstances=%d\n", a->magic, a->npar, a->flags, a->uid, a != b);
+
+    char name[64], disp[64];
+    for (int i = 0; i < a->npar; i++) {
+        a->d(a, 8, i, 0, name, 0);
+        a->d(a, 7, i, 0, disp, 0);
+        printf("  p%-2d %-10s = %-8s (norm %.3f)\n", i, name, disp, a->getP(a, i));
+    }
+
+    /* enum round-trip: a_dir (index 10) -> its last option */
+    a->setP(a, 10, 1.0f);
+    a->d(a, 7, 10, 0, disp, 0);
+    printf("%s -> 1.0 => %s (expect %s)\n", g_pspecs[10].key, disp, g_pspecs[10].choices[g_pspecs[10].nchoices - 1]);
+
+    /* float round-trip: a_density (index 2) */
+    a->setP(a, 2, 0.75f);
+    printf("a_density -> 0.75 => norm %.3f\n", a->getP(a, 2));
+
+    /* momentary: a_generate (index 0) fires then springs back via audioMasterAutomate,
+     * which this host stub ignores, but setParameter itself must not crash. */
+    a->setP(a, 0, 1.0f);
+
+    /* drive transport: playing at 120 BPM, advance ppqPos across many blocks so the
+     * synthesized 24-PPQN clock steps the sequencer (acid_process_midi's 0xF8 path). */
+    g_ti.flags = kPlaying | kPpq | kTempo;
+    g_ti.tempo = 120.0;
+    float L[128], R[128], *out[2] = { L, R };
+    double sr = 44100.0, ppq_per_block = (g_ti.tempo / 60.0) * (128.0 / sr);
+    for (int k = 0; k < 400; k++) {
+        a->pr(a, 0, out, 128);
+        g_ti.ppqPos += ppq_per_block;
+    }
+    a->d(a, 7, 0, 0, disp, 0);
+    printf("after 400 blocks playing: a_generate display '%s' (should be empty, trigger sprung back)\n", disp);
+
+    /* the drawn pick-list flag: a UI-only parameter, closed by a choice pick */
+    int fails = 0;
+    {
+        a->setP(a, kUiParam, 5.0f / 96.0f);
+        int opened = a->getP(a, kUiParam) > 0.01f;
+        a->setP(a, 10, 1.0f);
+        int closed = a->getP(a, kUiParam) < 0.001f;
+        printf("ui_open: opens %d, a choice pick closes it %d\n", opened, closed);
+        fails += !(opened && closed);
+    }
+
+    /* step grid: 16ths come from the song position (not pulse counting) -- loop wraps, mid-song starts
+     * and long runs must neither lose nor add a step */
+    {
+        AEffect *g = VSTPluginMain(host);
+        double ppb = (g_ti.tempo / 60.0) * (128.0 / sr);
+        /* the host tempo reaches the core (gate lengths use it): a project at 126 BPM must not stay at the 120 default */
+        g_ti.tempo = 126.0; g_ti.flags = kPlaying | kPpq | kTempo; g->pr(g, 0, out, 128);
+        printf("host tempo 126 -> core bpm %.1f\n", acid_dbg_bpm());
+        if (acid_dbg_bpm() < 125.9f || acid_dbg_bpm() > 126.1f) { printf("FAIL host tempo never reached the core (%.1f)\n", acid_dbg_bpm()); fails++; }
+        g_ti.tempo = 120.0;
+        g_ti.flags = 0; g->pr(g, 0, out, 128);                    /* stopped */
+        g_ti.flags = kPlaying | kPpq | kTempo;
+        /* (1) loop of 4 beats (16 steps) with a block-misaligned wrap, 50 loops */
+        double abs_ppq = 0; long at5 = 0, at50 = 0;
+        for (long k = 0; k < 4000000 && abs_ppq < 4.0 * 50; k++) {
+            g_ti.ppqPos = fmod(abs_ppq, 4.0);
+            g->pr(g, 0, out, 128);
+            abs_ppq += ppb;
+            if (!at5 && abs_ppq >= 4.0 * 5 + 0.2) at5 = acid_dbg_steps(g);
+        }
+        at50 = acid_dbg_steps(g);
+        printf("grid: steps over loops 6..50 = %ld (expect %d, within 1)\n", at50 - at5, 16 * 45);
+        if (labs((at50 - at5) - 16 * 45) > 1) { printf("FAIL loop step count drifted\n"); fails++; }
+        /* (2) start mid-song at 3.3: steps land on the absolute 16th grid */
+        g_ti.flags = 0; g->pr(g, 0, out, 128);
+        long s0 = acid_dbg_steps(g);
+        g_ti.flags = kPlaying | kPpq | kTempo;
+        double p = 3.3;
+        for (; p < 7.3; p += ppb) { g_ti.ppqPos = p; g->pr(g, 0, out, 128); }
+        long got = acid_dbg_steps(g) - s0, exp = 0;
+        for (long k = 0; k < 100; k++) if (k * 0.25 >= 3.3 && k * 0.25 < p) exp++;   /* the last block (at p - ppb) plays up to p */
+        printf("grid: mid-song start 3.3 -> %ld steps (expect %ld)\n", got, exp);
+        if (labs(got - exp) > 0) { printf("FAIL mid-song step count\n"); fails++; }
+        /* (3) tempo change: the host's ppqPos steps back a little -- no step may fire twice */
+        g_ti.flags = 0; g->pr(g, 0, out, 128);
+        g_ti.flags = kPlaying | kPpq | kTempo;
+        g_ti.ppqPos = 0.0; g->pr(g, 0, out, 128);
+        long j0 = acid_dbg_steps(g);
+        double q = 0.0, qmax = 0.0;
+        for (int k = 0; k < 400; k++) {
+            q += ppb; if (q > qmax) qmax = q; g_ti.ppqPos = q; g->pr(g, 0, out, 128);
+            if (k % 50 == 49) { q -= 0.1; g_ti.ppqPos = q; g->pr(g, 0, out, 128); }   /* jitter back 0.1 beat */
+        }
+        long jgot = acid_dbg_steps(g) - j0, jexp = (long)floor(qmax * 4.0 - 1e-9);
+        printf("grid: tempo-change jitter -> %ld steps (expect %ld)\n", jgot, jexp);
+        if (labs(jgot - jexp) > 1) { printf("FAIL step fired twice after ppqPos stepped back\n"); fails++; }
+        /* (4) fast tempo changes: the host's position steps back and jumps ahead (steps doubled and lost). The
+         * pattern step must still be the one the song position names: (16th index) mod length. */
+        g_ti.flags = 0; g->pr(g, 0, out, 128);
+        g_ti.flags = kPlaying | kPpq | kTempo;
+        q = 0.0; g_ti.ppqPos = q; g->pr(g, 0, out, 128);
+        for (int k = 0; k < 600; k++) {
+            q += ppb;
+            if (k % 37 == 36) q += 0.4;          /* lurch ahead: skips a 16th or two */
+            if (k % 53 == 52) q -= 0.15;         /* step back */
+            g_ti.ppqPos = q; g->pr(g, 0, out, 128);
+        }
+        for (int k = 0; k < 20; k++) { q += ppb; g_ti.ppqPos = q; g->pr(g, 0, out, 128); }
+        long lastk = (long)ceil(q * 4.0 - 1e-9) - 1;
+        printf("grid: tempo lurches -> pattern step %d (song says %ld)\n", acid_dbg_pos(g), lastk % 16);
+        if (acid_dbg_pos(g) != lastk % 16) { printf("FAIL pattern drifted off the song position\n"); fails++; }
+        /* (5) MPC's loop, reported as cycleStart/EndPos with the cycle flags (as on a Force, MPC OS 3.9.1), with the ppq jitter
+         * measured there (-0.0009..+0.0002 beat on the wrapped position). Each 16th fires in the block that holds it, at the
+         * block's start (never a block late), none is lost or doubled at the wraps, and the pattern follows the song. */
+        g_ti.flags = 0; g->pr(g, 0, out, 128);
+        g_ti.flags = kPlaying | kPpq | kTempo | kCycle | kCyclePos; g_ti.cycleStartPos = 0.0; g_ti.cycleEndPos = 4.0;
+        {
+            long base = acid_dbg_steps(g); int early_late = 0; double A = 0.0;
+            for (long k = 0; A < 4.0 * 50; k++, A += ppb) {
+                unsigned h = (unsigned)k * 2654435761u;
+                double jit = k ? ((h >> 8) % 1101) / 1e6 - 0.0009 : 0.0;
+                g_ti.ppqPos = fmod(A, 4.0) + jit; g->pr(g, 0, out, 128);
+                long fired = acid_dbg_steps(g) - base;
+                long lo = (long)ceil((A + ppb - 0.0021) * 4.0 - 1e-9), hi = (long)ceil((A + ppb + 0.0011) * 4.0 - 1e-9);   /* 16ths before the block's end */
+                if (fired < lo || fired > hi) early_late++;
+            }
+            long fired = acid_dbg_steps(g) - base, lastk = (long)ceil(A * 4.0 - 1e-9) - 1;
+            printf("grid: reported loop, jittered ppq -> %ld steps in 50 loops (expect 800), %d blocks not on time, pattern step %d (song %ld)\n",
+                   fired, early_late, acid_dbg_pos(g), lastk % 16);
+            if (labs(fired - 800) > 1) { printf("FAIL reported loop step count\n"); fails++; }
+            if (early_late) { printf("FAIL steps not sent with the block that holds them\n"); fails++; }
+            if (acid_dbg_pos(g) != lastk % 16) { printf("FAIL pattern off the song position after loops\n"); fails++; }
+        }
+        g_ti.flags = kPlaying | kPpq | kTempo;
+        g->d(g, 1, 0, 0, 0, 0);
+    }
+
+    /* Density: the share of steps that play follows the knob evenly, on the mostly-secondary algo too */
+    {
+        const char *want[3] = {"a_density", "a_algo", "a_generate"};
+        int ix[3] = {-1, -1, -1}, gate0 = -1;
+        for (int i = 0; i < kNumParams; i++) { for (int j = 0; j < 3; j++) if (!strcmp(g_pspecs[i].key, want[j])) ix[j] = i; if (!strcmp(g_pspecs[i].key, "a_e0_gate")) gate0 = i; }
+        float out3[2][128]; float *o3[2] = { out3[0], out3[1] };
+        double prev = -1;
+        for (int algo = 0; algo < 2; algo++)
+            for (int d = 1; d <= 3; d++) {
+                float dens = d * 0.25f; int total = 0;
+                a->setP(a, ix[1], algo ? 1.0f : 0.0f);
+                a->setP(a, ix[0], dens);
+                for (int g = 0; g < 60; g++) {
+                    a->setP(a, ix[2], 1.0f); acid_dbg_sync(a); a->pr(a, 0, o3, 128); a->setP(a, ix[2], 0.0f); acid_dbg_sync(a); a->pr(a, 0, o3, 128); acid_dbg_sync(a);
+                    for (int c = 0; c < 16; c++) if (a->getP(a, gate0 + c * 5) > 0.5f) total++;
+                }
+                double mean = total / 60.0;
+                printf("density: algo %s, knob %.2f -> %.1f of 16 steps play\n", algo ? "16" : "1", dens, mean);
+                if (fabs(mean - dens * 16) > 3.0) { printf("FAIL density not following the knob\n"); fails++; }
+                prev = mean;
+            }
+        (void)prev;
+        a->setP(a, ix[1], 0.0f); a->setP(a, ix[0], 0.5f);
+    }
+
+    /* Accent / slide: the share of steps accented / slid follows the knob on both algos */
+    {
+        const char *want[7] = {"a_accent", "a_slide", "a_algo", "a_generate", "a_density", "a_octaves", "a_e0_gate"};
+        int ix[7]; for (int j = 0; j < 7; j++) { ix[j] = -1; for (int i = 0; i < kNumParams; i++) if (!strcmp(g_pspecs[i].key, want[j])) ix[j] = i; }
+        float out4[2][128]; float *o4[2] = { out4[0], out4[1] };
+        for (int algo = 0; algo < 2; algo++)
+            for (int knob = 0; knob < 2; knob++)
+                for (int d = 0; d <= 4; d++) {
+                    float v = d * 0.25f; double on = 0, acc = 0, sld = 0;
+                    a->setP(a, ix[2], algo ? 1.0f : 0.0f); a->setP(a, ix[4], 0.8f);
+                    a->setP(a, ix[0], knob == 0 ? v : 0.4f); a->setP(a, ix[1], knob == 1 ? v : 0.25f); a->setP(a, ix[5], 0.5f);
+                    for (int g = 0; g < 60; g++) {
+                        a->setP(a, ix[3], 1.0f); acid_dbg_sync(a); a->pr(a, 0, o4, 128); a->setP(a, ix[3], 0.0f); acid_dbg_sync(a); a->pr(a, 0, o4, 128); acid_dbg_sync(a);
+                        for (int c = 0; c < 16; c++) {
+                            if (a->getP(a, ix[6] + c * 5) < 0.5f) continue;
+                            on++; acc += a->getP(a, ix[6] + c * 5 + 2) > 0.5f; sld += a->getP(a, ix[6] + c * 5 + 3) > 0.5f;
+                        }
+                    }
+                    { int bad = acid_dbg_sync(a); if (bad) printf("  (stale cells after sync: %d)\n", bad); }
+                    printf("knobs: algo %s %s %.2f -> accented %.0f%% slid %.0f%%\n", algo ? "16" : "1",
+                           knob == 0 ? "accent" : "slide ", v, 100 * acc / on, 100 * sld / on);
+                    if (knob == 0 && fabs(acc / on - v) > 0.12) { printf("FAIL accent not following the knob\n"); fails++; }
+                    if (knob == 1 && v <= 0.5f && fabs(sld / on - v) > 0.12) { printf("FAIL slide not following the knob\n"); fails++; }
+                }
+        a->setP(a, ix[2], 0.0f); a->setP(a, ix[0], 0.5f); a->setP(a, ix[1], 0.25f); a->setP(a, ix[5], 0.5f); a->setP(a, ix[4], 0.5f);
+    }
+
+    /* MOD: a square LFO on A's density moves the pattern but never the knob, and its settings are saved */
+    {
+        int ix[8]; const char *ks[8] = {"a_density", "lfo1_shape", "lfo1_sync", "lfo1_div", "lfo1_d1", "lfo1_a1", "a_e0_gate", "a_run"};
+        for (int j = 0; j < 8; j++) { ix[j] = -1; for (int i = 0; i < kNumParams; i++) if (!strcmp(g_pspecs[i].key, ks[j])) ix[j] = i; if (ix[j] < 0) { printf("FAIL no param %s\n", ks[j]); fails++; } }
+        if (fails == 0 || ix[0] >= 0) {
+            float out2[2][128]; float *o2[2] = { out2[0], out2[1] };
+            a->setP(a, ix[0], 0.5f);
+            a->setP(a, ix[1], 3.0f / 4.0f);    /* SQR */
+            a->setP(a, ix[2], 1.0f);           /* sync on */
+            a->setP(a, ix[3], 0.0f);           /* 1/4 note = 4 steps */
+            a->setP(a, ix[4], 1.0f / 15.0f);   /* A DENSITY */
+            a->setP(a, ix[5], 1.0f);           /* +100 */
+            double qq = 0.0;
+            g_ti.flags = 0; a->pr(a, 0, o2, 128);
+            g_ti.flags = kPlaying | kPpq | kTempo; g_ti.ppqPos = 0.0; g_ti.tempo = 126.0; g_ti.sampleRate = 44100.0;
+            int on_lo = 0, on_hi = 0;
+            for (int k = 0; k < 400; k++) {
+                qq += 128.0 * 126.0 / 60.0 / 44100.0; g_ti.ppqPos = qq; a->pr(a, 0, o2, 128);
+                double fr = qq * 4.0 - floor(qq * 4.0); long sx = (long)floor(qq * 4.0);
+                if (sx >= 4 && fr > 0.3 && fr < 0.9) { int on = 0; for (int c = 0; c < 16; c++) { int ci = -1; char nm[16]; snprintf(nm, sizeof nm, "a_e%d_gate", c); for (int i = 0; i < kNumParams; i++) if (!strcmp(g_pspecs[i].key, nm)) ci = i; if (ci >= 0 && a->getP(a, ci) > 0.5f) on++; } if ((sx / 2) % 2) on_hi += on; else on_lo += on; }
+            }
+            acid_dbg_sync(a);
+            printf("mod: knob %.3f (expect 0.500), steps on in the two LFO halves: %d / %d\n", a->getP(a, ix[0]), on_lo, on_hi);
+            if (fabsf(a->getP(a, ix[0]) - 0.5f) > 0.001f) { printf("FAIL modulation moved the knob\n"); fails++; }
+            if (on_lo == on_hi) { printf("FAIL LFO did not change the pattern\n"); fails++; }
+            g_ti.flags = 0; a->pr(a, 0, o2, 128);
+        }
+    }
+
+    /* chunk round-trip */
+    void *chunk = 0;
+    intptr_t n = a->d(a, 23, 0, 0, &chunk, 0);
+    printf("chunk %ld bytes: %.120s...\n", (long)n, (char *)chunk);
+    b->d(b, 24, 0, n, chunk, 0);
+    printf("b after setChunk: a_dir norm %.3f (a %.3f)\n", b->getP(b, 10), a->getP(a, 10));
+    if (memcmp(chunk, "MPCP", 4)) { printf("FAIL chunk is not an MPCP state\n"); fails++; }
+    /* a project saved by the 2.x wrapper build (text chunk) still loads */
+    {
+        char legacy[] = "a_dir=2;a_density=0.55;scale=3;a_channel=5;";
+        AEffect *c = VSTPluginMain(host);
+        c->d(c, 24, 0, (intptr_t)sizeof legacy, legacy, 0);
+        char dd[64];
+        c->d(c, 7, 10, 0, dd, 0);
+        int ci = -1; for (int i = 0; i < kNumParams; i++) if (!strcmp(g_pspecs[i].key, "scale")) ci = i;
+        char sd[64]; c->d(c, 7, ci, 0, sd, 0);
+        printf("legacy chunk: a_dir '%s' (expect PENDUL), scale '%s' (expect MIN PENT)\n", dd, sd);
+        if (strcmp(dd, "PENDUL") || strcmp(sd, "MIN PENT")) { printf("FAIL legacy chunk not applied\n"); fails++; }
+        c->d(c, 1, 0, 0, 0, 0);
+    }
+
+    a->d(a, 1, 0, 0, 0, 0);
+    b->d(b, 1, 0, 0, 0, 0);
+    printf("%s\n", fails ? "FAILED" : "OK");
+    return fails ? 1 : 0;
+}
