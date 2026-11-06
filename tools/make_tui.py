@@ -244,7 +244,7 @@ def knob_def(r):
             entry("knob", "Knob", {"version": 3, "knobType": "FilmStrip", "filmStrip": name + ".png", "numFrames": 64, "invert": False,
                                    "dragOrientation": "Vertical", "handleName": "Data"}, "0 0 %d %d" % (size, size)),
         ], actions=[act("Mouse Down", "Q-Link"), act("Double Click", "Show Overlay", "knob overlay"),
-                    act("Enter Pressed", "Show Overlay", "knob overlay")])})
+                    act("Enter Pressed", "Show Overlay", "knob overlay")], background=bg("00000000"))})
     return _KNOBS[name]
 
 
@@ -257,7 +257,7 @@ def note_def():
             entry("strip", "Knob", {"version": 3, "knobType": "FilmStrip", "filmStrip": "note_strip.png", "numFrames": 29, "invert": False,
                                     "dragOrientation": "Vertical", "handleName": "Data"}, "0 0 52 270"),
         ], actions=[act("Mouse Down", "Q-Link"), act("Double Click", "Show Overlay", "knob overlay"),
-                    act("Enter Pressed", "Show Overlay", "knob overlay")])})
+                    act("Enter Pressed", "Show Overlay", "knob overlay")], background=bg("00000000"))})
     return _KNOBS["nslider"][1]
 
 
