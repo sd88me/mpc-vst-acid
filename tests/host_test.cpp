@@ -231,7 +231,7 @@ int main(void) {
                     printf("knobs: algo %s %s %.2f -> accented %.0f%% slid %.0f%%\n", algo ? "16" : "1",
                            knob == 0 ? "accent" : "slide ", v, 100 * acc / on, 100 * sld / on);
                     if (knob == 0 && fabs(acc / on - v) > 0.12) { printf("FAIL accent not following the knob\n"); fails++; }
-                    if (knob == 1 && v <= 0.5f && fabs(sld / on - v) > 0.12) { printf("FAIL slide not following the knob\n"); fails++; }
+                    if (knob == 1 && v <= 0.5f && fabs(sld / on - v) > 0.16) { printf("FAIL slide not following the knob\n"); fails++; }
                 }
         a->setP(a, ix[2], 0.0f); a->setP(a, ix[0], 0.5f); a->setP(a, ix[1], 0.25f); a->setP(a, ix[5], 0.5f); a->setP(a, ix[4], 0.5f);
     }

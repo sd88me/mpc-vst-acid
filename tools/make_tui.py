@@ -140,8 +140,11 @@ def slider_slot_def():
     return [{"key": "sliderSlot", "value": slot}, {"key": "knob overlay", "value": knob_overlay}, {"key": "menu overlay", "value": menu_overlay}]
 
 
-def focus_ring(b):
-    return entry("focus", "Focus", FOCUS, b, visible="WhenFocussed")
+KNOB_FOCUS = dict(FOCUS, backgroundColour="00000000", outlineColour="00000000")   # no square behind a round knob
+
+
+def focus_ring(b, knob=False):
+    return entry("focus", "Focus", KNOB_FOCUS if knob else FOCUS, b, visible="WhenFocussed")
 
 
 
@@ -238,7 +241,7 @@ def knob_def(r):
         save(strip, name + ".png")
         pad = 6
         _KNOBS[name] = (size, {"key": name, "value": component([
-            focus_ring("%d %d %d %d" % (-pad, -pad, size + 2 * pad, size + 2 * pad)),
+            focus_ring("%d %d %d %d" % (-pad, -pad, size + 2 * pad, size + 2 * pad), knob=True),
             entry("knob", "Knob", {"version": 3, "knobType": "FilmStrip", "filmStrip": name + ".png", "numFrames": 64, "invert": False,
                                    "dragOrientation": "Vertical", "handleName": "Data"}, "0 0 %d %d" % (size, size)),
         ], actions=[act("Mouse Down", "Q-Link"), act("Double Click", "Show Overlay", "knob overlay"),

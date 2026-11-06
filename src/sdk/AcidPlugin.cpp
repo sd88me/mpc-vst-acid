@@ -487,14 +487,15 @@ private:
     }
 
     // ---- worker: momentary releases, the host-visible state the core changes by itself ---------------------------------------------
-    bool readEngine(int i, float& plain)
+    bool readEngine(int i, float& plain, bool clampToRange = true)
     {
         char buf[64];
         int n;
         { std::lock_guard<std::mutex> lk(lock_); n = g_api->get_param(inst_, g_pspecs[i].key, buf, sizeof buf); }
         if (n <= 0) return false;
         buf[n < (int)sizeof buf ? n : (int)sizeof buf - 1] = 0;
-        plain = std::min(std::max((float)std::atof(buf), g_pspecs[i].min), g_pspecs[i].max);
+        plain = (float)std::atof(buf);
+        if (clampToRange) plain = std::min(std::max(plain, g_pspecs[i].min), g_pspecs[i].max);
         return true;
     }
 
@@ -531,7 +532,7 @@ private:
         {
             if (iRun_[b] < 0) continue;
             float col = 0.0f, run = 0.0f, bar = 0.0f;
-            if (playingNow_.load() && readEngine(iRun_[b], run) && readEngine(iBar_[b], bar))
+            if (playingNow_.load() && readEngine(iRun_[b], run, false) && readEngine(iBar_[b], bar))
             {
                 const int r = (int)run;
                 col = r > 0 && (r - 1) / 16 == (int)bar ? (float)((r - 1) % 16 + 1) : 0.0f;
