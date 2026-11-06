@@ -241,7 +241,6 @@ def knob_def(r):
         save(strip, name + ".png")
         pad = 6
         _KNOBS[name] = (size, {"key": name, "value": component([
-            focus_ring("%d %d %d %d" % (-pad, -pad, size + 2 * pad, size + 2 * pad), knob=True),
             entry("knob", "Knob", {"version": 3, "knobType": "FilmStrip", "filmStrip": name + ".png", "numFrames": 64, "invert": False,
                                    "dragOrientation": "Vertical", "handleName": "Data"}, "0 0 %d %d" % (size, size)),
         ], actions=[act("Mouse Down", "Q-Link"), act("Double Click", "Show Overlay", "knob overlay"),
