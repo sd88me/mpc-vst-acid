@@ -5,10 +5,10 @@
 #   ./build-sdk.sh            gen params, build both targets, assemble the folder (plugin.json, version.xml, Plugin Skins)
 #   ./build-sdk.sh beta       the same as "Acid 2 Beta" (uid AcIB): installs next to the release
 #   ./build-sdk.sh test       the offline test (tests/run.sh) and the SDK's host simulator
-# MPC_SDK: the plugin-vibecode-sdk checkout.
+# MPC_SDK: the mpc-plugin-builder-sdk checkout.
 set -euo pipefail
 cd "$(dirname "$0")"
-SDK="${MPC_SDK:-$HOME/mpc-310-private/plugin-vibecode-sdk/plugin-vibecode-sdk}"
+SDK="${MPC_SDK:-$HOME/mpc-310-private/mpc-plugin-builder-sdk}"
 [ -f "$SDK/framework/mpc_plugin.h" ] || { echo "need the SDK (MPC_SDK)" >&2; exit 1; }
 NAME="Acid"; UID_="'A','c','I','d'"; SLUG=acid
 if [ "${1:-}" = beta ]; then NAME="Acid 2 Beta"; UID_="'A','c','I','B'"; SLUG=acid2beta; fi
