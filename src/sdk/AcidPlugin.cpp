@@ -14,6 +14,11 @@
 //     Chain mode, the running lights, the Chain readout); a worker thread reads them back and tells the host.
 // Parameter 0 is GENERATE (frozen order). The host nudges parameter 0 to 1 and straight back on every prepare: a press counts only once it
 // has stayed high for ~40 ms, so the nudge never re-rolls the pattern.
+// Threads: the audio thread owns the core. Host/UI threads never call into it: a parameter change, GENERATE/MUTATE and a state load
+// put commands on a lock-free ring (push); the audio thread applies them at the start of its next block (drain) and publishes what the
+// core changed (the pushed params, running lights) as atomics, which the worker reads and tells the host. The audio thread never takes a
+// lock. With no block for 60 ms (host stopped) the worker owns the core for a moment (syncCore) so edits still apply; saving the state
+// does the same (withCore). A block that finds the core taken is skipped: the high-water mark (lastPpq_) sends its steps with the next.
 // State: the framework saves every parameter by id; the seeds and the hand-locked steps go in the extra state and are applied last.
 // A project saved by the 2.x wrapper build ("key=value;" text) is still read (effSetChunk is wrapped in VSTPluginMain below).
 
@@ -33,6 +38,8 @@ extern "C" {
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -100,7 +107,9 @@ public:
         held_ = new std::atomic<bool>[n];
         release_ = new std::atomic<bool>[n];
         for (size_t i = 0; i < n; ++i) { held_[i].store(false); release_[i].store(false); }
-        told_.assign(n, -1.0e9f);
+        told_.reset(new std::atomic<float>[n]);
+        snap_.reset(new std::atomic<float>[n]);
+        for (size_t i = 0; i < n; ++i) { told_[i].store(-1.0e9f); snap_[i].store(kNoValue); }
         iMute_ = indexOf("mute");
         iSwing_ = indexOf("swing");
         iBar_[0] = indexOf("a_edit_bar"); iBar_[1] = indexOf("b_edit_bar");
@@ -112,6 +121,7 @@ public:
         }
         if (g_api && g_api->api_version == MIDI_FX_API_VERSION) inst_ = g_api->create_instance(".", nullptr);
         alsaOpen();
+        if (inst_) { busy_.store(true); publish(true); busy_.store(false); }
         worker_ = std::thread(&AcidPlugin::workerMain, this);
     }
 
@@ -119,6 +129,7 @@ public:
     {
         quit_.store(true);
         if (worker_.joinable()) worker_.join();
+        while (busy_.exchange(true)) std::this_thread::yield();   // never released: the plugin is going away
         alsaClose();
         if (inst_) g_api->destroy_instance(inst_);
         delete[] held_;
@@ -139,6 +150,8 @@ public:
     void process(mpc::ProcessContext& ctx) override
     {
         if (!inst_) return;
+        if (busy_.exchange(true)) return;   // the core is held for a moment (a state save): its steps go out with the next block
+        drain();
         feedTransport(ctx);
         for (int k = 0; k < ctx.numMidiEvents; ++k)
         {
@@ -147,15 +160,16 @@ public:
             uint8_t out[MIDI_FX_MAX_OUT_MSGS][3];
             int olen[MIDI_FX_MAX_OUT_MSGS];
             uint8_t in[3] = {e.data[0], e.data[1], e.size > 2 ? e.data[2] : (uint8_t)0};
-            int n;
-            { std::lock_guard<std::mutex> lk(lock_); n = g_api->process_midi(inst_, in, 3, out, olen, MIDI_FX_MAX_OUT_MSGS); }
+            const int n = g_api->process_midi(inst_, in, 3, out, olen, MIDI_FX_MAX_OUT_MSGS);
             alsaSend(out, olen, n);
         }
         uint8_t out[MIDI_FX_MAX_OUT_MSGS][3];
         int olen[MIDI_FX_MAX_OUT_MSGS];
-        int n;
-        { std::lock_guard<std::mutex> lk(lock_); n = g_api->tick(inst_, ctx.numFrames, MOVE_SAMPLE_RATE, out, olen, MIDI_FX_MAX_OUT_MSGS); }
+        const int n = g_api->tick(inst_, ctx.numFrames, MOVE_SAMPLE_RATE, out, olen, MIDI_FX_MAX_OUT_MSGS);
         alsaSend(out, olen, n);
+        publish(false);
+        lastBlockMs_.store(nowMs());
+        busy_.store(false);
     }
 
     // ---- parameters -----------------------------------------------------------------------------------------------------------
@@ -180,12 +194,11 @@ public:
             return;
         }
         if (loading_.load() && (s.flags & kEditCell)) return;   // derived from the pattern: a state load must not lock the steps it shows
-        if (s.flags & kPushed) told_[(size_t)index] = plain;   // the host already has this value: don't echo it back
+        if (s.flags & kPushed) told_[(size_t)index].store(plain);   // the host already has this value: don't echo it back
         char buf[32];
         if (s.flags & kFloat) std::snprintf(buf, sizeof buf, "%g", (double)plain);
         else std::snprintf(buf, sizeof buf, "%d", (int)std::lround(plain));
-        std::lock_guard<std::mutex> lk(lock_);
-        g_api->set_param(inst_, s.key, buf);
+        push(kSet, index, nullptr, buf);
     }
 
     // A small value range shown as a percentage (density, accent, slide, gate, jitter).
@@ -210,8 +223,8 @@ public:
         for (const char* k : {"a_seed", "b_seed", "a_locks", "b_locks"})
         {
             char buf[512];
-            int n;
-            { std::lock_guard<std::mutex> lk(lock_); n = g_api->get_param(inst_, k, buf, sizeof buf); }
+            int n = 0;
+            withCore([&] { n = g_api->get_param(inst_, k, buf, sizeof buf); });
             if (n <= 0) continue;
             buf[n < (int)sizeof buf ? n : (int)sizeof buf - 1] = 0;
             s += k; s += '='; s += buf; s += ';';
@@ -234,9 +247,8 @@ public:
         loading_.store(true);
         if (s.find("a_seed=") == std::string::npos)   // saved before seeds were stored: keep the old fixed default pattern
         {
-            std::lock_guard<std::mutex> lk(lock_);
-            g_api->set_param(inst_, "a_seed", "48879");
-            g_api->set_param(inst_, "b_seed", "48880");
+            push(kRaw, -1, "a_seed", "48879");
+            push(kRaw, -1, "b_seed", "48880");
         }
         applyText(s);
         loading_.store(false);
@@ -259,7 +271,7 @@ private:
 
     void fire(int index)
     {
-        { std::lock_guard<std::mutex> lk(lock_); g_api->set_param(inst_, g_pspecs[index].key, "go"); }
+        push(kFire, index, nullptr, "go");
         release_[index].store(true);
     }
 
@@ -285,8 +297,7 @@ private:
             }
             else if (i < 0)
             {
-                std::lock_guard<std::mutex> lk(lock_);
-                g_api->set_param(inst_, key.c_str(), val.c_str());
+                push(kRaw, -1, key.c_str(), val.c_str());
             }
         }
     }
@@ -399,9 +410,8 @@ private:
             std::snprintf(kb, sizeof kb, "%ld", k);
             uint8_t st = 0xF9;
             int n;
-            { std::lock_guard<std::mutex> lk(lock_);
-              g_api->set_param(inst_, "song_step", kb);
-              n = g_api->process_midi(inst_, &st, 1, out, olen, MIDI_FX_MAX_OUT_MSGS); }
+            g_api->set_param(inst_, "song_step", kb);
+            n = g_api->process_midi(inst_, &st, 1, out, olen, MIDI_FX_MAX_OUT_MSGS);
             alsaSend(out, olen, n);
             nextK_ = k + 1;
             ++steps_;
@@ -410,7 +420,7 @@ private:
         {
             uint8_t msg = 0xF8;
             int n;
-            { std::lock_guard<std::mutex> lk(lock_); n = g_api->process_midi(inst_, &msg, 1, out, olen, MIDI_FX_MAX_OUT_MSGS); }
+            n = g_api->process_midi(inst_, &msg, 1, out, olen, MIDI_FX_MAX_OUT_MSGS);
             alsaSend(out, olen, n);
         }
     }
@@ -431,17 +441,17 @@ private:
             nextK_ = -1;
             int n;
             msg[0] = 0xFA;
-            { std::lock_guard<std::mutex> lk(lock_); n = g_api->process_midi(inst_, msg, 1, out, olen, MIDI_FX_MAX_OUT_MSGS); }
+            n = g_api->process_midi(inst_, msg, 1, out, olen, MIDI_FX_MAX_OUT_MSGS);
             alsaSend(out, olen, n);
             uint8_t arm[2] = {0xF9, 1};   // from here the core steps on 0xF9 boundaries; 0xF8 is only a sync heartbeat
-            { std::lock_guard<std::mutex> lk(lock_); n = g_api->process_midi(inst_, arm, 2, out, olen, MIDI_FX_MAX_OUT_MSGS); }
+            n = g_api->process_midi(inst_, arm, 2, out, olen, MIDI_FX_MAX_OUT_MSGS);
         }
         else if (!playing && wasPlaying_)
         {
             g_clock.store(MOVE_CLOCK_STATUS_STOPPED);
             msg[0] = 0xFC;
             int n;
-            { std::lock_guard<std::mutex> lk(lock_); n = g_api->process_midi(inst_, msg, 1, out, olen, MIDI_FX_MAX_OUT_MSGS); }
+            n = g_api->process_midi(inst_, msg, 1, out, olen, MIDI_FX_MAX_OUT_MSGS);
             alsaSend(out, olen, n);
         }
         wasPlaying_ = playing;
@@ -486,22 +496,100 @@ private:
         }
     }
 
+    // ---- core ownership, commands in, values out -----------------------------------------------------------------------------
+    void drain()   // owner
+    {
+        unsigned t = tail_.load(std::memory_order_relaxed);
+        for (int budget = 128; budget-- > 0 && t != head_.load(std::memory_order_acquire);)   // a burst never holds one block for long
+        {
+            const Cmd& c = ring_[t % kRing];
+            if (c.kind == kRaw) g_api->set_param(inst_, c.key, c.val);
+            else if (c.idx >= 0 && c.idx < kNumParams) g_api->set_param(inst_, g_pspecs[c.idx].key, c.val);
+            tail_.store(++t, std::memory_order_release);
+            burst_ = 4;
+        }
+    }
+
+    void push(int kind, int idx, const char* key, const char* val)   // any thread; never takes the core
+    {
+        for (int tries = 0; head_.load() - tail_.load() >= kRing && tries < 200; ++tries) { syncCore(false); std::this_thread::yield(); }
+        while (prodLock_.test_and_set(std::memory_order_acquire)) std::this_thread::yield();
+        const unsigned h = head_.load(std::memory_order_relaxed);
+        if (h - tail_.load(std::memory_order_acquire) < kRing)
+        {
+            Cmd& c = ring_[h % kRing];
+            c.kind = kind; c.idx = idx;
+            std::snprintf(c.key, sizeof c.key, "%s", key ? key : "");
+            std::snprintf(c.val, sizeof c.val, "%s", val ? val : "");
+            head_.store(h + 1, std::memory_order_release);
+        }
+        prodLock_.clear(std::memory_order_release);
+        syncCore(false);
+    }
+
+    // Publish what the core holds: the running lights and edit bars every block, the other pushed params round-robin (all of them
+    // after `all`, 80 per block for a few blocks after a command, else 24).
+    void publish(bool all)   // owner
+    {
+        const bool playing = playingNow_.load();
+        for (int b = 0; b < 2; ++b)
+            if (all || playing) { readCore(iRun_[b]); readCore(iBar_[b]); }
+        int budget = all ? kNumParams : burst_ > 0 ? 80 : 24;
+        if (burst_ > 0) --burst_;
+        const int first = pubCursor_;
+        for (int k = 0; k < kNumParams && budget > 0; ++k)
+        {
+            const int i = (first + k) % kNumParams;
+            if (!(g_pspecs[i].flags & kPushed) || iRun_[0] == i || iRun_[1] == i) continue;
+            readCore(i);
+            --budget;
+            pubCursor_ = (i + 1) % kNumParams;
+        }
+    }
+    void readCore(int i)
+    {
+        if (i < 0) return;
+        char buf[64];
+        const int n = g_api->get_param(inst_, g_pspecs[i].key, buf, sizeof buf);
+        if (n <= 0) return;
+        buf[n < (int)sizeof buf ? n : (int)sizeof buf - 1] = 0;
+        snap_[(size_t)i].store((float)std::atof(buf), std::memory_order_relaxed);
+    }
+
+    // No audio block for 60 ms (host stopped): the calling thread takes the core for a moment so edits still apply and the host
+    // still hears of changes. force = the offline test: wait for the core and publish everything.
+    void syncCore(bool force)
+    {
+        if (!inst_) return;
+        if (!force && nowMs() - lastBlockMs_.load() < 60) return;
+        if (force) { while (busy_.exchange(true)) std::this_thread::yield(); }
+        else if (busy_.exchange(true)) return;
+        drain();
+        publish(force);
+        busy_.store(false);
+    }
+
+    template <class F> void withCore(F fn)   // a non-audio thread that needs the core now (saving the state): waits for the audio thread, never the reverse
+    {
+        while (busy_.exchange(true)) std::this_thread::yield();
+        drain();
+        fn();
+        busy_.store(false);
+    }
+
     // ---- worker: momentary releases, the host-visible state the core changes by itself ---------------------------------------------
     bool readEngine(int i, float& plain, bool clampToRange = true)
     {
-        char buf[64];
-        int n;
-        { std::lock_guard<std::mutex> lk(lock_); n = g_api->get_param(inst_, g_pspecs[i].key, buf, sizeof buf); }
-        if (n <= 0) return false;
-        buf[n < (int)sizeof buf ? n : (int)sizeof buf - 1] = 0;
-        plain = (float)std::atof(buf);
+        const float v = snap_[(size_t)i].load(std::memory_order_relaxed);   // what the audio thread last published
+        if (v != v) return false;
+        plain = v;
         if (clampToRange) plain = std::min(std::max(plain, g_pspecs[i].min), g_pspecs[i].max);
         return true;
     }
 
     void pushValue(int i, float plain)
     {
-        told_[(size_t)i] = plain;
+        told_[(size_t)i].store(plain);
         store(i, plain);
         notifyHostParameterChanged(i);
     }
@@ -519,13 +607,14 @@ private:
     void tickOnce(bool force)
     {
         if (!inst_) return;
+        syncCore(force);
         // GENERATE on parameter 0 counts only after ~40 ms high
         const long long p0 = pending0_.load();
         if (p0 && (force || nowMs() - p0 >= 40)) { pending0_.store(0); fire(0); }
         for (int i = 0; i < kNumParams; ++i)
             if (release_[i].load()) { release_[i].store(false); held_[i].store(false); store(i, 0.0f); notifyHostParameterChanged(i); }
         if (notify_.exchange(false)) notifyHostParameterChanged(kUiParam);
-        if (resync_.exchange(false)) std::fill(told_.begin(), told_.end(), -1.0e9f);
+        if (resync_.exchange(false)) for (int i = 0; i < kNumParams; ++i) told_[(size_t)i].store(-1.0e9f);
 
         // the running lights: 1..16 = the playing step's column in the bar shown, 0 = none
         for (int b = 0; b < 2; ++b)
@@ -537,7 +626,7 @@ private:
                 const int r = (int)run;
                 col = r > 0 && (r - 1) / 16 == (int)bar ? (float)((r - 1) % 16 + 1) : 0.0f;
             }
-            if (col != told_[(size_t)iRun_[b]]) pushValue(iRun_[b], col);
+            if (col != told_[(size_t)iRun_[b]].load()) pushValue(iRun_[b], col);
         }
         // everything else the core changes behind the host's back: a bounded number per pass, round-robin
         int budget = force ? kNumParams : 24;
@@ -548,7 +637,7 @@ private:
             const int fl = g_pspecs[i].flags;
             if (!(fl & kPushed) || iRun_[0] == i || iRun_[1] == i) continue;
             float v;
-            if (!readEngine(i, v) || v == told_[(size_t)i]) continue;
+            if (!readEngine(i, v) || v == told_[(size_t)i].load()) continue;
             pushValue(i, v);
             --budget;
             cursor_ = (i + 1) % kNumParams;
@@ -561,8 +650,7 @@ public:
     int dbgPos()
     {
         char b[16] = {0};
-        std::lock_guard<std::mutex> lk(lock_);
-        g_api->get_param(inst_, "a_pos", b, sizeof b);
+        withCore([&] { g_api->get_param(inst_, "a_pos", b, sizeof b); });
         return std::atoi(b);
     }
     int dbgSync()
@@ -579,14 +667,25 @@ public:
 #endif
 private:
     void* inst_ = nullptr;
-    std::mutex lock_;   // serialises every call into the (single-threaded) core; held for microseconds
+    // Ownership of the core: whoever holds busy_ may call into it (the audio thread each block; the worker or a state save when idle).
+    std::atomic<bool> busy_{false};
+    std::atomic<long long> lastBlockMs_{0};
+    struct Cmd { int kind = 0, idx = -1; char key[40] = {0}; char val[56] = {0}; };
+    enum { kSet = 1, kFire, kRaw };   // set parameter idx to val / fire idx ("go") / set the core key `key`
+    static const unsigned kRing = 1024;
+    Cmd ring_[kRing];
+    std::atomic<unsigned> head_{0}, tail_{0};
+    std::atomic_flag prodLock_ = ATOMIC_FLAG_INIT;   // producers (host, UI, worker threads) take turns; only the owner consumes
+    static constexpr float kNoValue = std::numeric_limits<float>::quiet_NaN();
+    std::unique_ptr<std::atomic<float>[]> snap_;   // published core values of the pushed params, running lights and edit bars
+    int pubCursor_ = 0, burst_ = 0;
     std::thread worker_;
     std::atomic<bool> quit_{false};
     std::atomic<bool> notify_{false}, resync_{false}, playingNow_{false};
     std::atomic<long long> pending0_{0};
     std::atomic<bool>* held_ = nullptr;
     std::atomic<bool>* release_ = nullptr;
-    std::vector<float> told_;   // the value the host was last told, per pushed parameter
+    std::unique_ptr<std::atomic<float>[]> told_;   // the value the host was last told, per pushed parameter
     int iMute_ = -1, iSwing_ = -1, iBar_[2] = {-1, -1}, iRun_[2] = {-1, -1};
     snd_seq_t* seq_ = nullptr;
     int port_ = -1, slot_ = -1;

@@ -9,6 +9,8 @@
 #include <string.h>
 #include <math.h>
 #include <stdlib.h>
+#include <pthread.h>
+#include <time.h>
 #include "params_gen.h"
 
 typedef struct AEffect AEffect;
@@ -47,6 +49,45 @@ static intptr_t host(AEffect *e, int32_t op, int32_t idx, intptr_t v, void *p, f
     if (op == 1) return 2400;               /* audioMasterVersion */
     if (op == 7) return (intptr_t)&g_ti;   /* audioMasterGetTime */
     return 0;
+}
+
+static AEffect *g_ui; static volatile int g_stop; static long g_writes;
+static int idx_of(const char *k) { for (int i = 0; i < kNumParams; i++) if (!strcmp(g_pspecs[i].key, k)) return i; return 0; }
+static void *ui_thread(void *arg) {   /* a busy screen: drags rewrite values, every parameter and display is read, over and over */
+    (void)arg;
+    float v[kNumParams]; char disp[64]; const int ch = idx_of("a_channel");
+    for (int i = 0; i < kNumParams; i++) v[i] = g_ui->getP(g_ui, i);
+    while (!g_stop) {
+        for (int i = 0; i < kNumParams && !g_stop; i++) {
+            const int fl = g_pspecs[i].flags;
+            if (!(fl & (kPushed | kMomentary | kUi | kReadOnly | kEditCell))) {
+                g_ui->setP(g_ui, i, i == ch ? ((g_writes & 1) ? 0.2f : 0.4f) : v[i]); g_writes++;
+            }
+            g_ui->d(g_ui, 7, i, 0, disp, 0);
+            (void)g_ui->getP(g_ui, i);
+        }
+    }
+    return 0;
+}
+static double now_us(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec * 1e6 + t.tv_nsec / 1e3; }
+/* 32 beats at 120 BPM on a fresh instance, optionally with a thread hammering it; returns the steps played, the pattern position and the longest process() */
+static long play_beats(int ui, int *pos, double *maxpr, long *writes) {
+    AEffect *x = VSTPluginMain(host);
+    pthread_t th; g_stop = 0; g_writes = 0; g_ui = x;
+    if (ui) pthread_create(&th, 0, ui_thread, 0);
+    float L[128], R[128], *o[2] = { L, R };
+    g_ti.flags = kPlaying | kPpq | kTempo; g_ti.tempo = 120.0; g_ti.ppqPos = 0;
+    double ppb = (g_ti.tempo / 60.0) * (128.0 / 44100.0); *maxpr = 0;
+    for (int k = 0; k < (int)(32.0 / ppb); k++) {
+        double t0 = now_us(); x->pr(x, 0, o, 128); double dt = now_us() - t0; if (dt > *maxpr) *maxpr = dt;
+        g_ti.ppqPos += ppb;
+        if (ui) { struct timespec ts = { 0, 200000 }; nanosleep(&ts, 0); }
+    }
+    g_stop = 1; if (ui) pthread_join(th, 0);
+    long st = acid_dbg_steps(x); *pos = acid_dbg_pos(x); *writes = g_writes;
+    g_ti.flags = kTempo; x->pr(x, 0, o, 128);
+    x->d(x, 1, 0, 0, 0, 0);
+    return st;
 }
 
 int main(void) {
@@ -263,6 +304,14 @@ int main(void) {
             if (on_lo == on_hi) { printf("FAIL LFO did not change the pattern\n"); fails++; }
             g_ti.flags = 0; a->pr(a, 0, o2, 128);
         }
+    }
+
+    /* ui traffic: a thread hammers writes and reads while 32 beats play; the steps and the pattern position must match a quiet run */
+    {
+        int pq, pb; double mq, mb; long wq, wb;
+        long sq = play_beats(0, &pq, &mq, &wq), sb = play_beats(1, &pb, &mb, &wb);
+        printf("ui traffic: %ld writes; steps %ld vs %ld, pattern position %d vs %d; longest process() %.0f us busy vs %.0f us quiet\n", wb, sb, sq, pb, pq, mb, mq);
+        if (sq <= 0 || sq != sb || pq != pb) { printf("FAIL a busy screen changed what played\n"); fails++; }
     }
 
     /* chunk round-trip */
