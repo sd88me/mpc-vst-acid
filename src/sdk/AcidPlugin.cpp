@@ -325,25 +325,36 @@ private:
     void alsaClose()
     {
         if (!seq_) return;
+        flushNotes();
+        snd_seq_close(seq_);
+        seq_ = nullptr;
+        if (slot_ >= 0) g_slots.fetch_and(~(1u << slot_));
+    }
+
+    // Note-off for the notes this instance has sounding and nothing else, so a stop, a locate or a close never touches a channel
+    // another track's arpeggiator is using.
+    void flushNotes()
+    {
+        if (!seq_ || port_ < 0) return;
         for (int ch = 0; ch < 16; ch++)
             for (int note = 0; note < 128; note++)
             {
+                if (!on_[ch][note]) continue;
+                on_[ch][note] = false;
                 snd_seq_event_t ev;
                 snd_seq_ev_clear(&ev);
                 snd_seq_ev_set_source(&ev, port_);
                 snd_seq_ev_set_subs(&ev);
                 snd_seq_ev_set_direct(&ev);
                 snd_seq_ev_set_noteoff(&ev, ch, note, 0);
-                snd_seq_event_output_direct(seq_, &ev);
+                snd_seq_event_output(seq_, &ev);
             }
-        snd_seq_close(seq_);
-        seq_ = nullptr;
-        if (slot_ >= 0) g_slots.fetch_and(~(1u << slot_));
+        snd_seq_drain_output(seq_);
     }
 
     void alsaSend(const uint8_t (*msgs)[3], const int* lens, int n)
     {
-        const bool muted = iMute_ >= 0 && getBool(iMute_);   // muted: swallow note-ons, keep note-offs so nothing hangs
+        const bool muted = iMute_ >= 0 && getBool(iMute_);   // muted: swallow note-ons and CCs (slide), keep note-offs so nothing hangs
         for (int i = 0; i < n; i++)
         {
             if (lens[i] < 2) continue;
@@ -354,25 +365,28 @@ private:
             if (sentLen_ < 16) sentLen_++;
         }
         if (!seq_ || port_ < 0) return;
+        bool queued = false;
         for (int i = 0; i < n; i++)
         {
             const uint8_t* m = msgs[i];
             const int len = lens[i];
             if (len < 2) continue;
             if (muted && (m[0] & 0xF0) == 0x90 && len >= 3 && m[2] > 0) continue;
+            if (muted && (m[0] & 0xF0) == 0xB0) continue;   // a muted Acid puts nothing but note-offs on the port
             snd_seq_event_t ev;
             snd_seq_ev_clear(&ev);
             snd_seq_ev_set_source(&ev, port_);
             snd_seq_ev_set_subs(&ev);
             snd_seq_ev_set_direct(&ev);
             const uint8_t type = m[0] & 0xF0, ch = m[0] & 0x0F;
-            if (type == 0x90 && len >= 3 && m[2] > 0) snd_seq_ev_set_noteon(&ev, ch, m[1], m[2]);
-            else if (type == 0x80 || (type == 0x90 && len >= 3)) snd_seq_ev_set_noteoff(&ev, ch, m[1], 0);
+            if (type == 0x90 && len >= 3 && m[2] > 0) { snd_seq_ev_set_noteon(&ev, ch, m[1], m[2]); on_[ch][m[1] & 127] = true; }
+            else if (type == 0x80 || (type == 0x90 && len >= 3)) { snd_seq_ev_set_noteoff(&ev, ch, m[1], 0); on_[ch][m[1] & 127] = false; }
             else if (type == 0xB0 && len >= 3) snd_seq_ev_set_controller(&ev, ch, m[1], m[2]);
             else continue;
             snd_seq_event_output(seq_, &ev);   // buffered, non-blocking: drops instead of hanging
+            queued = true;
         }
-        snd_seq_drain_output(seq_);
+        if (queued) snd_seq_drain_output(seq_);   // nothing queued: no call, the port stays silent
     }
 
     // Loop guard: MPC record-arm / input monitor can route this plugin's own ALSA output straight back in as MIDI, and the core would
@@ -453,6 +467,7 @@ private:
             int n;
             n = g_api->process_midi(inst_, msg, 1, out, olen, MIDI_FX_MAX_OUT_MSGS);
             alsaSend(out, olen, n);
+            flushNotes();   // stop: nothing may be left sounding
         }
         wasPlaying_ = playing;
         playingNow_.store(playing);
@@ -478,6 +493,7 @@ private:
             const bool inLoop = cyc && p >= ls - 0.002 && p < le;
             start = inLoop ? std::max(p - 0.002, ls) : p < start ? p : p - 0.002;
             nextK_ = -1;
+            flushNotes();   // a locate or unreported wrap (Link re-sync): release what the old position left sounding
         }
         if (end > start)
         {
@@ -692,6 +708,7 @@ private:
     uint8_t sent_[16][3] = {{0}};
     int sentLen_ = 0, sentPos_ = 0;
     bool wasPlaying_ = false;
+    bool on_[16][128] = {};   // notes this instance has sent on and not yet off
     double lastPpq_ = 0.0;
     int cursor_ = 0;
     long steps_ = 0;
