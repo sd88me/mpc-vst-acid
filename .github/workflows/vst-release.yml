@@ -1,35 +1,31 @@
-# Build Acid into a DRAFT release (acid-vst-v<version>) with mpc-vst-plugins' shared workflow:
+# Build Acid into a DRAFT release (acid-vst-v<version>) with open-mpc/mpc-vst-plugins' shared workflow:
 # Actions -> "VST release (draft)" -> Run workflow. Then install that draft's zip on a device,
 # smoke-test it, and publish the draft (see mpc-vst-plugins docs/RELEASING.md).
-# dry_run builds the zip and skin previews as run artifacts only.
-#
-# tools_ref is pinned to a commit on mpc-vst-plugins main (the portable one-folder layout; it has the label_scale= layout key this skin
-# depends on, docs/SKIN_STUDIO.md, and the plugin_id/license catalog inputs).
+# dry_run (default) builds and packages as run artifacts only, no draft release.
+# The shared repo moved from sd88me/ to open-mpc/; the pin is one commit of it, in both places.
 name: VST release (draft)
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version, e.g. 1.0.0
+        description: Version, e.g. 3.0.1
         required: true
       dry_run:
-        description: Build only (zip + skin previews as run artifacts), no draft release
+        description: Build only (zips as run artifacts), no draft release
         type: boolean
-        default: false
+        default: true
 
 jobs:
   acid:
-    uses: sd88me/mpc-vst-plugins/.github/workflows/vst-release.yml@97a2effca4114dd00f738b018e2f0d1d3ccb2d7f
+    uses: open-mpc/mpc-vst-plugins/.github/workflows/vst-release.yml@5fd7c1f67924dde2610766382ea9c853942887c9
     permissions:
       contents: write
     with:
       tag: acid-vst-v${{ inputs.version }}
       version: ${{ inputs.version }}
-      tools_ref: 97a2effca4114dd00f738b018e2f0d1d3ccb2d7f
-      vst_dir: vst
-      build: SHADOW_SKIN_MPC_OS=2 bash vst/build.sh
-      host_test: vst/test.sh
+      tools_ref: 5fd7c1f67924dde2610766382ea9c853942887c9
+      sdk_project: .
       plugin_id: acid
       license: GPL-3.0-only
       about: A TB-303-style acid bassline sequencer (two lines, blendable) that drives a synth track over MIDI.

@@ -988,14 +988,16 @@ static int advance_all_inner(acid_inst_t *t, uint8_t out_msgs[][3], int out_lens
     for (int i = 0; i < NUM_SEQS; i++) {
         acid_seq_t *s = &t->seq[i];
         if (s->auto_gen_idx != 0) {
-            s->auto_gen_step_count++;
-            if (locked ? (k > 0 && k % AUTO_GEN_BAR_STEPS[s->auto_gen_idx - 1] == 0)
-                       : s->auto_gen_step_count >= AUTO_GEN_BAR_STEPS[s->auto_gen_idx - 1]) {
+            /* Counted in steps, also when the host places them on the song grid: the song step k wraps with the MPC's loop, so a
+             * k % interval test never fired for a loop as short as the interval (2-bar loop, 2-bar Regen) and fired at the wrong
+             * spacing for others. The count reaches the interval after the last step of the span; the next step regenerates. */
+            if (s->auto_gen_step_count >= AUTO_GEN_BAR_STEPS[s->auto_gen_idx - 1]) {
                 s->auto_gen_step_count = 0;
                 memset(s->locked, 0, sizeof s->locked);
                 regenerate_pattern(s, t->scale, rng_next_u32(&s->rng));
                 if (s->position >= s->length) s->position = s->length - 1;
             }
+            s->auto_gen_step_count++;
         } else {
             s->auto_gen_step_count = 0;
         }
