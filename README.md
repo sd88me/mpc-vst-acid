@@ -8,7 +8,7 @@ no sound itself. It is a native VST2 plugin with a touchscreen skin and Q-Link c
 
 <img width="640" alt="Acid SEQ A" src="docs/img/seq-a.png" />
 
-**Version 3.0.0** · GPL-3.0-only · by sd88me
+**Version 3.0.1** · GPL-3.0-only · by sd88me
 
 ## Use it
 1. Add **Acid** to an instrument track from the plugin browser.
